@@ -24,8 +24,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
-  useCompletePaymentMutation,
   useRegisterMutation,
+  useSubmitPaymentProofMutation,
 } from "../hooks/useQueries";
 
 const UPI_ID = "yespay.bizsbiz12758@yesbankltd";
@@ -42,7 +42,6 @@ export default function RegisterPage() {
     referredBy: "",
   });
   const [step, setStep] = useState<"form" | "payment" | "success">("form");
-  const [registeredUserId, setRegisteredUserId] = useState<bigint | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // UTR submission form state
@@ -55,7 +54,7 @@ export default function RegisterPage() {
   const [utrError, setUtrError] = useState<string | null>(null);
 
   const registerMutation = useRegisterMutation();
-  const completePaymentMutation = useCompletePaymentMutation();
+  const submitPaymentProofMutation = useSubmitPaymentProofMutation();
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -116,28 +115,16 @@ export default function RegisterPage() {
       return;
     }
 
-    if (registeredUserId === null) {
-      setRegisteredUserId(BigInt(0));
-    }
-
     try {
       setUtrError(null);
-      await completePaymentMutation.mutateAsync(BigInt(0));
-
-      // Save UTR submission to localStorage
-      const submission = {
-        txId: utrForm.txId.trim(),
-        userName: utrForm.userName.trim(),
+      await submitPaymentProofMutation.mutateAsync({
+        utr: utrForm.txId.trim(),
+        name: utrForm.userName.trim(),
         phone: utrForm.phone.trim(),
-        submittedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(
-        "tm11_payment_submission",
-        JSON.stringify(submission),
-      );
+      });
 
       setStep("success");
-      toast.success("Payment submitted! Admin will verify shortly.");
+      toast.success("Payment proof submitted! Admin will verify shortly.");
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Payment failed";
       setUtrError(msg);
@@ -630,15 +617,15 @@ export default function RegisterPage() {
                         <Button
                           className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5 glow-gold"
                           onClick={handleConfirmPayment}
-                          disabled={completePaymentMutation.isPending}
+                          disabled={submitPaymentProofMutation.isPending}
                           data-ocid="register.utr.submit_button"
                         >
-                          {completePaymentMutation.isPending ? (
+                          {submitPaymentProofMutation.isPending ? (
                             <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                           ) : null}
-                          {completePaymentMutation.isPending
-                            ? "Activating Membership..."
-                            : "Confirm & Activate Membership"}
+                          {submitPaymentProofMutation.isPending
+                            ? "Submitting..."
+                            : "Confirm & Submit Proof"}
                         </Button>
 
                         {/* Back link */}
@@ -680,19 +667,20 @@ export default function RegisterPage() {
                   </div>
                   <div>
                     <h2 className="font-display font-black text-2xl text-gradient-gold mb-2">
-                      Welcome to Tm11primeTime!
+                      Payment Proof Submitted!
                     </h2>
                     <p className="text-muted-foreground font-body">
-                      Your membership is active. ₹150 joining bonus has been
-                      credited to your wallet!
+                      Your membership will activate once admin verifies your
+                      payment. ₹150 joining bonus will be credited to your
+                      wallet upon approval.
                     </p>
                   </div>
                   <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-                    <div className="text-2xl font-display font-black text-gradient-gold">
-                      ₹150
+                    <div className="text-base font-ui font-semibold text-primary">
+                      Pending Verification
                     </div>
                     <div className="text-muted-foreground text-sm font-body mt-1">
-                      Added to your wallet
+                      Admin will review your payment proof shortly
                     </div>
                   </div>
                   <Button

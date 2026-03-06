@@ -14,6 +14,20 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const PaymentStatus = IDL.Variant({
+  'pending' : IDL.Null,
+  'approved' : IDL.Null,
+  'rejected' : IDL.Null,
+});
+export const PaymentSubmission = IDL.Record({
+  'id' : IDL.Nat,
+  'utr' : IDL.Text,
+  'status' : PaymentStatus,
+  'userId' : IDL.Nat,
+  'name' : IDL.Text,
+  'timestamp' : IDL.Int,
+  'phone' : IDL.Text,
+});
 export const User = IDL.Record({
   'id' : IDL.Nat,
   'referralCode' : IDL.Text,
@@ -65,6 +79,11 @@ export const Transaction = IDL.Record({
   'txType' : IDL.Text,
   'amount' : IDL.Int,
 });
+export const PaymentSubmissionInput = IDL.Record({
+  'utr' : IDL.Text,
+  'name' : IDL.Text,
+  'phone' : IDL.Text,
+});
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -74,12 +93,21 @@ export const idlService = IDL.Service({
       [],
     ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-  'completePayment' : IDL.Func([IDL.Nat], [], []),
   'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+  'getAllPaymentSubmissions' : IDL.Func(
+      [],
+      [IDL.Vec(PaymentSubmission)],
+      ['query'],
+    ),
   'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
   'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+  'getMyPaymentSubmissions' : IDL.Func(
+      [],
+      [IDL.Vec(PaymentSubmission)],
+      ['query'],
+    ),
   'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
   'getMyWatchHistory' : IDL.Func([IDL.Nat], [IDL.Vec(WatchRecord)], ['query']),
   'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
@@ -102,7 +130,9 @@ export const idlService = IDL.Service({
       [],
     ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
   'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
+  'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
 });
 
 export const idlInitArgs = [];
@@ -113,6 +143,20 @@ export const idlFactory = ({ IDL }) => {
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
+  });
+  const PaymentStatus = IDL.Variant({
+    'pending' : IDL.Null,
+    'approved' : IDL.Null,
+    'rejected' : IDL.Null,
+  });
+  const PaymentSubmission = IDL.Record({
+    'id' : IDL.Nat,
+    'utr' : IDL.Text,
+    'status' : PaymentStatus,
+    'userId' : IDL.Nat,
+    'name' : IDL.Text,
+    'timestamp' : IDL.Int,
+    'phone' : IDL.Text,
   });
   const User = IDL.Record({
     'id' : IDL.Nat,
@@ -165,6 +209,11 @@ export const idlFactory = ({ IDL }) => {
     'txType' : IDL.Text,
     'amount' : IDL.Int,
   });
+  const PaymentSubmissionInput = IDL.Record({
+    'utr' : IDL.Text,
+    'name' : IDL.Text,
+    'phone' : IDL.Text,
+  });
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
@@ -174,12 +223,21 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-    'completePayment' : IDL.Func([IDL.Nat], [], []),
     'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+    'getAllPaymentSubmissions' : IDL.Func(
+        [],
+        [IDL.Vec(PaymentSubmission)],
+        ['query'],
+      ),
     'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
     'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
+    'getMyPaymentSubmissions' : IDL.Func(
+        [],
+        [IDL.Vec(PaymentSubmission)],
+        ['query'],
+      ),
     'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
     'getMyWatchHistory' : IDL.Func(
         [IDL.Nat],
@@ -206,7 +264,9 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
     'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
+    'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   });
 };
 

@@ -1,5 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type {
+  PaymentSubmission,
+  PaymentSubmissionInput,
   ReferralNode,
   Transaction,
   User,
@@ -124,7 +126,60 @@ export function useAllUsers() {
   });
 }
 
+export function useAllPaymentSubmissions() {
+  const { actor, isFetching } = useActor();
+  return useQuery<PaymentSubmission[]>({
+    queryKey: ["allPaymentSubmissions"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllPaymentSubmissions();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
 // ─── Mutations ────────────────────────────────────────────────────────────────
+
+export function useIsAdminAssigned() {
+  const { actor, isFetching } = useActor();
+  return useQuery<boolean>({
+    queryKey: ["isAdminAssigned"],
+    queryFn: async () => {
+      if (!actor) return false;
+      return (actor as any).isAdminAssigned();
+    },
+    enabled: !!actor && !isFetching,
+  });
+}
+
+export function useClaimFirstAdminMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      if (!actor) throw new Error("Not connected");
+      await (actor as any).claimFirstAdmin();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isAdminAssigned"] });
+    },
+  });
+}
+
+export function useInitializeAdminMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (secret: string) => {
+      if (!actor) throw new Error("Not connected");
+      await (actor as any)._initializeAccessControlWithSecret(secret);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+    },
+  });
+}
 
 export function useRegisterMutation() {
   const { actor } = useActor();
@@ -151,17 +206,38 @@ export function useRegisterMutation() {
   });
 }
 
-export function useCompletePaymentMutation() {
+export function useSubmitPaymentProofMutation() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (userId: bigint) => {
+    mutationFn: async (input: PaymentSubmissionInput): Promise<bigint> => {
       if (!actor) throw new Error("Not connected");
-      await actor.completePayment(userId);
+      return actor.submitPaymentProof(input);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["callerUserProfile"] });
       queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+    },
+  });
+}
+
+export function useVerifyPaymentSubmissionMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      submissionId,
+      action,
+    }: {
+      submissionId: bigint;
+      action: string;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      await actor.verifyPaymentSubmission(submissionId, action);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allPaymentSubmissions"] });
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
     },
   });
 }

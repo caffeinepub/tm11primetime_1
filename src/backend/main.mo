@@ -1,14 +1,15 @@
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
 import Array "mo:core/Array";
-import Text "mo:core/Text";
 import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import Order "mo:core/Order";
 import List "mo:core/List";
 import Runtime "mo:core/Runtime";
 import Int "mo:core/Int";
+import Text "mo:core/Text";
 import Principal "mo:core/Principal";
+
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
@@ -71,9 +72,32 @@ actor {
     phone : Text;
   };
 
+  type PaymentSubmission = {
+    id : Nat;
+    userId : Nat;
+    name : Text;
+    phone : Text;
+    utr : Text;
+    timestamp : Int;
+    status : PaymentStatus;
+  };
+
+  type PaymentStatus = {
+    #pending;
+    #approved;
+    #rejected;
+  };
+
+  public type PaymentSubmissionInput = {
+    name : Text;
+    phone : Text;
+    utr : Text;
+  };
+
   var nextUserId = 1;
   var nextVideoId = 1;
   var nextTransactionId = 1;
+  var nextPaymentSubmissionId = 1;
 
   let users = Map.empty<Nat, User>();
   let videos = Map.empty<Nat, Video>();
@@ -81,10 +105,17 @@ actor {
   let transactions = Map.empty<Nat, Transaction>();
   let principalToUserId = Map.empty<Principal, Nat>();
   let userProfiles = Map.empty<Principal, UserProfile>();
+  let paymentSubmissions = Map.empty<Nat, PaymentSubmission>();
 
   module Transaction {
     public func compare(a : Transaction, b : Transaction) : Order.Order {
       Nat.compare(a.userId, b.userId);
+    };
+  };
+
+  module PaymentSubmission {
+    public func compare(a : PaymentSubmission, b : PaymentSubmission) : Order.Order {
+      Int.compare(b.timestamp, a.timestamp);
     };
   };
 
@@ -143,7 +174,7 @@ actor {
 
     users.add(userId, newUser);
     principalToUserId.add(caller, userId);
-    
+
     let profile : UserProfile = {
       userId;
       name;
@@ -152,78 +183,142 @@ actor {
     };
     userProfiles.add(caller, profile);
 
+    // Assign user role in access control system
+    AccessControl.assignRole(accessControlState, caller, caller, #user);
+
     referralCode;
   };
 
-  public shared ({ caller }) func completePayment(userId : Nat) : async () {
+  public shared ({ caller }) func submitPaymentProof(input : PaymentSubmissionInput) : async Nat {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can complete payment");
+      Runtime.trap("Unauthorized: Only users can submit payment proof");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
+    let userId = switch (getUserIdFromPrincipal(caller)) {
       case (null) { Runtime.trap("Caller not registered") };
       case (?id) { id };
     };
 
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only complete payment for your own account");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    if (user.isPaid) {
-      Runtime.trap("User already paid");
-    };
-
-    let updatedUser = { user with isPaid = true; walletBalance = user.walletBalance + 15000 };
-    users.add(userId, updatedUser);
-
-    let bonusTxn : Transaction = {
-      id = nextTransactionId;
+    let submission : PaymentSubmission = {
+      id = nextPaymentSubmissionId;
       userId;
-      amount = 15000;
-      txType = "joining_bonus";
-      note = "Joining bonus";
+      name = input.name;
+      phone = input.phone;
+      utr = input.utr;
       timestamp = Time.now();
+      status = #pending;
     };
-    transactions.add(nextTransactionId, bonusTxn);
-    nextTransactionId += 1;
 
-    var currentReferralCode = user.referredBy;
-    var level = 1;
-    let levelEarnings = [1000, 500, 400, 300, 200, 100, 50, 25, 25, 25, 25, 25, 25, 25, 25];
+    paymentSubmissions.add(nextPaymentSubmissionId, submission);
+    nextPaymentSubmissionId += 1;
 
-    while (level <= 15 and not Text.equal(currentReferralCode, "")) {
-      let referrerOpt = users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) });
-      
-      switch (referrerOpt) {
-        case (null) { level := 16 };
-        case (?referrer) {
-          let referralCount = findReferrals(referrer.referralCode).size();
-          
-          if (referrer.isPaid and referralCount >= 3) {
-            let earning = levelEarnings[level - 1];
-            let updatedReferrer = { referrer with walletBalance = referrer.walletBalance + earning };
-            users.add(referrer.id, updatedReferrer);
+    submission.id;
+  };
 
-            let earnTxn : Transaction = {
-              id = nextTransactionId;
-              userId = referrer.id;
-              amount = earning;
-              txType = "level_earning";
-              note = "Level " # level.toText() # " earning from user " # userId.toText();
-              timestamp = Time.now();
-            };
-            transactions.add(nextTransactionId, earnTxn);
-            nextTransactionId += 1;
-          };
+  public query ({ caller }) func getMyPaymentSubmissions() : async [PaymentSubmission] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view payment submissions");
+    };
 
-          currentReferralCode := referrer.referredBy;
-          level += 1;
+    let userId = switch (getUserIdFromPrincipal(caller)) {
+      case (null) { Runtime.trap("Caller not registered") };
+      case (?id) { id };
+    };
+
+    paymentSubmissions.values().toArray().filter(
+      func(s) {
+        s.userId == userId;
+      }
+    ).sort();
+  };
+
+  public query ({ caller }) func getAllPaymentSubmissions() : async [PaymentSubmission] {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can view all payment submissions");
+    };
+
+    paymentSubmissions.values().toArray().sort();
+  };
+
+  public shared ({ caller }) func verifyPaymentSubmission(submissionId : Nat, action : Text) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can verify payment submissions");
+    };
+
+    let submission = switch (paymentSubmissions.get(submissionId)) {
+      case (null) { Runtime.trap("Payment submission not found") };
+      case (?s) { s };
+    };
+
+    switch (action) {
+      case ("approve") {
+        let user = switch (users.get(submission.userId)) {
+          case (null) { Runtime.trap("User not found") };
+          case (?u) { u };
         };
+
+        if (user.isPaid) {
+          Runtime.trap("User already paid");
+        };
+
+        let updatedUser = { user with isPaid = true; walletBalance = user.walletBalance + 15000 };
+        users.add(submission.userId, updatedUser);
+
+        let updatedSubmission = { submission with status = #approved };
+        paymentSubmissions.add(submissionId, updatedSubmission);
+
+        let bonusTxn : Transaction = {
+          id = nextTransactionId;
+          userId = submission.userId;
+          amount = 15000;
+          txType = "joining_bonus";
+          note = "Joining bonus";
+          timestamp = Time.now();
+        };
+        transactions.add(nextTransactionId, bonusTxn);
+        nextTransactionId += 1;
+
+        var currentReferralCode = user.referredBy;
+        var level = 1;
+        let levelEarnings = [1000, 500, 400, 300, 200, 100, 50, 25, 25, 25, 25, 25, 25, 25, 25];
+
+        while (level <= 15 and not Text.equal(currentReferralCode, "")) {
+          let referrerOpt = users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) });
+
+          switch (referrerOpt) {
+            case (null) { level := 16 };
+            case (?referrer) {
+              let referralCount = findReferrals(referrer.referralCode).size();
+
+              if (referrer.isPaid and referralCount >= 3) {
+                let earning = levelEarnings[level - 1];
+                let updatedReferrer = { referrer with walletBalance = referrer.walletBalance + earning };
+                users.add(referrer.id, updatedReferrer);
+
+                let earnTxn : Transaction = {
+                  id = nextTransactionId;
+                  userId = referrer.id;
+                  amount = earning;
+                  txType = "level_earning";
+                  note = "Level " # level.toText() # " earning from user " # submission.userId.toText();
+                  timestamp = Time.now();
+                };
+                transactions.add(nextTransactionId, earnTxn);
+                nextTransactionId += 1;
+              };
+
+              currentReferralCode := referrer.referredBy;
+              level += 1;
+            };
+          };
+        };
+      };
+      case ("reject") {
+        let updatedSubmission = { submission with status = #rejected };
+        paymentSubmissions.add(submissionId, updatedSubmission);
+      };
+      case (_) {
+        Runtime.trap("Invalid action");
       };
     };
   };
@@ -441,5 +536,22 @@ actor {
     };
 
     videos.remove(videoId);
+  };
+
+  // Allows the first authenticated caller to claim admin when no admin exists yet.
+  public shared ({ caller }) func claimFirstAdmin() : async () {
+    if (caller.isAnonymous()) {
+      Runtime.trap("Must be authenticated to claim admin");
+    };
+    if (accessControlState.adminAssigned) {
+      Runtime.trap("An admin has already been assigned");
+    };
+    accessControlState.userRoles.add(caller, #admin);
+    accessControlState.adminAssigned := true;
+  };
+
+  // Returns whether any admin has been assigned yet.
+  public query func isAdminAssigned() : async Bool {
+    accessControlState.adminAssigned;
   };
 };

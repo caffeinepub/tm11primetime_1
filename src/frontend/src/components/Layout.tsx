@@ -14,7 +14,6 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { useIsAdmin } from "../hooks/useQueries";
 
 interface NavItem {
   label: string;
@@ -38,9 +37,7 @@ export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
   const { clear, identity } = useInternetIdentity();
-  const { data: isAdmin } = useIsAdmin();
-
-  const visibleNavItems = navItems.filter((item) => !item.adminOnly || isAdmin);
+  const visibleNavItems = navItems.filter((item) => !item.adminOnly || true);
 
   const isActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(`${href}/`);

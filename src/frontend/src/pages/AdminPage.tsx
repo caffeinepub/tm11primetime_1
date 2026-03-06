@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -37,26 +38,32 @@ import {
   AlertCircle,
   BarChart3,
   CheckCircle,
-  Edit,
+  Copy,
+  Info,
   Loader2,
   PlayCircle,
   Plus,
   Receipt,
+  RefreshCw,
   Shield,
   Trash2,
   Users,
   XCircle,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import {
   useAddVideoMutation,
+  useAllPaymentSubmissions,
   useAllUsers,
   useAllVideos,
+  useClaimFirstAdminMutation,
   useDeleteVideoMutation,
   useIsAdmin,
+  useIsAdminAssigned,
   useUpdateUserStatusMutation,
+  useVerifyPaymentSubmissionMutation,
 } from "../hooks/useQueries";
 
 const VIDEO_CATEGORIES = [
@@ -87,35 +94,23 @@ const initialFormData: AddVideoFormData = {
 export default function AdminPage() {
   const navigate = useNavigate();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
+  const { data: isAdminAssigned, isLoading: adminAssignedLoading } =
+    useIsAdminAssigned();
+  const claimFirstAdminMutation = useClaimFirstAdminMutation();
   const { data: users, isLoading: usersLoading } = useAllUsers();
   const { data: videos, isLoading: videosLoading } = useAllVideos();
+  const { data: paymentSubmissions, isLoading: paymentsLoading } =
+    useAllPaymentSubmissions();
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
   const addVideoMutation = useAddVideoMutation();
   const deleteVideoMutation = useDeleteVideoMutation();
+  const verifyPaymentMutation = useVerifyPaymentSubmissionMutation();
 
   const [addVideoOpen, setAddVideoOpen] = useState(false);
   const [videoForm, setVideoForm] = useState<AddVideoFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
-
-  // Payment submission from localStorage
-  const [lastPaymentSubmission, setLastPaymentSubmission] = useState<{
-    txId: string;
-    userName: string;
-    phone: string;
-    submittedAt: string;
-  } | null>(null);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("tm11_payment_submission");
-      if (raw) {
-        setLastPaymentSubmission(JSON.parse(raw));
-      }
-    } catch {
-      // ignore parse errors
-    }
-  }, []);
+  const [adminToken, setAdminToken] = useState("");
 
   const handleVideoFormChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -184,7 +179,7 @@ export default function AdminPage() {
     }
   };
 
-  if (adminLoading) {
+  if (adminLoading || adminAssignedLoading) {
     return (
       <div className="p-6 space-y-4" data-ocid="admin.loading_state">
         <Skeleton className="h-8 w-48 animate-shimmer" />
@@ -194,23 +189,244 @@ export default function AdminPage() {
   }
 
   if (!isAdmin) {
+    const handleActivateAdmin = () => {
+      const token = adminToken.trim();
+      if (!token) {
+        toast.error("Please paste your admin token first.");
+        return;
+      }
+      sessionStorage.setItem("caffeineAdminToken", token);
+      toast.success("Token saved — reloading…");
+      window.location.reload();
+    };
+
+    const handleClaimFirstAdmin = async () => {
+      try {
+        await claimFirstAdminMutation.mutateAsync();
+        toast.success("You are now admin!");
+        window.location.reload();
+      } catch (err) {
+        const msg =
+          err instanceof Error ? err.message : "Failed to claim admin access";
+        toast.error(msg);
+      }
+    };
+
+    // Section A: No admin assigned yet — show "Become Admin" flow
+    if (!isAdminAssigned) {
+      return (
+        <div className="p-6 flex items-center justify-center min-h-[60vh]">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: "easeOut" }}
+            className="w-full max-w-lg space-y-6"
+            data-ocid="admin.claim.panel"
+          >
+            {/* Header */}
+            <div className="text-center space-y-3">
+              <div className="relative mx-auto w-20 h-20">
+                <div className="w-20 h-20 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center">
+                  <Shield className="w-10 h-10 text-primary" />
+                </div>
+                <span className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-green-500 border-2 border-background flex items-center justify-center">
+                  <CheckCircle className="w-3.5 h-3.5 text-white" />
+                </span>
+              </div>
+              <div>
+                <h2 className="font-display font-black text-2xl text-foreground">
+                  Claim Admin Access
+                </h2>
+                <p className="text-muted-foreground text-sm font-body mt-1.5 leading-relaxed">
+                  No admin has been set up yet for this app.
+                </p>
+              </div>
+            </div>
+
+            {/* One-click claim card */}
+            <Card className="card-premium border border-primary/30 bg-primary/5">
+              <CardContent className="p-6 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0 mt-0.5">
+                    <CheckCircle className="w-4 h-4 text-green-400" />
+                  </div>
+                  <div>
+                    <p className="font-ui font-semibold text-sm text-foreground">
+                      You are the app owner
+                    </p>
+                    <p className="text-muted-foreground text-sm font-body mt-0.5 leading-relaxed">
+                      Since no admin has been assigned yet, click the button
+                      below to become admin instantly. This can only be done
+                      once.
+                    </p>
+                  </div>
+                </div>
+
+                <Button
+                  className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90"
+                  onClick={handleClaimFirstAdmin}
+                  disabled={claimFirstAdminMutation.isPending}
+                  data-ocid="admin.claim.primary_button"
+                >
+                  {claimFirstAdminMutation.isPending ? (
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  ) : (
+                    <Shield className="w-5 h-5 mr-2" />
+                  )}
+                  {claimFirstAdminMutation.isPending
+                    ? "Claiming…"
+                    : "Become Admin"}
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Button
+              variant="ghost"
+              className="w-full font-ui text-muted-foreground hover:text-foreground"
+              onClick={() => navigate({ to: "/dashboard" })}
+              data-ocid="admin.claim.cancel_button"
+            >
+              Back to Dashboard
+            </Button>
+          </motion.div>
+        </div>
+      );
+    }
+
+    // Section B: Admin already assigned, but you're not them — show token entry
     return (
       <div className="p-6 flex items-center justify-center min-h-[60vh]">
-        <div className="text-center space-y-4 max-w-sm">
-          <Alert variant="destructive" data-ocid="admin.error_state">
-            <AlertCircle className="w-4 h-4" />
-            <AlertDescription className="font-body">
-              Access denied. Admin privileges required.
-            </AlertDescription>
-          </Alert>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: "easeOut" }}
+          className="w-full max-w-xl space-y-6"
+          data-ocid="admin.claim.panel"
+        >
+          {/* Header */}
+          <div className="text-center space-y-3">
+            <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
+              <Shield className="w-8 h-8 text-primary" />
+            </div>
+            <div>
+              <h2 className="font-display font-black text-2xl text-foreground">
+                Admin Access Setup
+              </h2>
+              <p className="text-muted-foreground text-sm font-body mt-1">
+                Your admin token is stored in your Caffeine project's
+                environment variables as{" "}
+                <code className="font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded text-xs">
+                  CAFFEINE_ADMIN_TOKEN
+                </code>
+              </p>
+            </div>
+          </div>
+
+          {/* Step 1 — Automatic */}
+          <Card className="card-premium border border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display font-bold text-base text-foreground flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-black flex items-center justify-center">
+                  1
+                </span>
+                <RefreshCw className="w-4 h-4 text-primary" />
+                Automatic (Preferred)
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0">
+              <p className="text-muted-foreground text-sm font-body leading-relaxed">
+                The Caffeine platform automatically passes your admin token via
+                the URL when you open the app from your project dashboard.{" "}
+                <strong className="text-foreground font-ui">
+                  If you just deployed this app, try refreshing the page.
+                </strong>
+              </p>
+              <Button
+                variant="outline"
+                className="mt-3 w-full border-primary/30 text-primary hover:bg-primary/10 font-ui"
+                onClick={() => window.location.reload()}
+                data-ocid="admin.claim.primary_button"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh Page
+              </Button>
+            </CardContent>
+          </Card>
+
+          <div className="flex items-center gap-3">
+            <Separator className="flex-1 bg-border" />
+            <span className="text-muted-foreground text-xs font-ui uppercase tracking-widest">
+              or
+            </span>
+            <Separator className="flex-1 bg-border" />
+          </div>
+
+          {/* Step 2 — Manual */}
+          <Card className="card-premium border border-border">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display font-bold text-base text-foreground flex items-center gap-2">
+                <span className="w-6 h-6 rounded-full bg-muted/40 text-muted-foreground text-xs font-black flex items-center justify-center">
+                  2
+                </span>
+                <Copy className="w-4 h-4 text-muted-foreground" />
+                Manual Token Entry
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pt-0 space-y-3">
+              <Alert className="border-amber-500/30 bg-amber-500/10">
+                <Info className="w-4 h-4 text-amber-400" />
+                <AlertDescription className="font-body text-xs text-foreground/80 leading-relaxed">
+                  Go to your{" "}
+                  <strong className="font-ui text-foreground">
+                    Caffeine project settings
+                  </strong>{" "}
+                  → Environment Variables → copy the value of{" "}
+                  <code className="font-mono text-primary bg-primary/10 px-1 rounded text-xs">
+                    CAFFEINE_ADMIN_TOKEN
+                  </code>
+                  , then paste it below.
+                </AlertDescription>
+              </Alert>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="adminToken" className="font-ui text-sm">
+                  Admin Token
+                </Label>
+                <Input
+                  id="adminToken"
+                  type="password"
+                  value={adminToken}
+                  onChange={(e) => setAdminToken(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleActivateAdmin();
+                  }}
+                  placeholder="Paste your CAFFEINE_ADMIN_TOKEN here"
+                  className="bg-input border-border font-mono text-sm"
+                  data-ocid="admin.claim.input"
+                />
+              </div>
+
+              <Button
+                className="w-full bg-primary text-primary-foreground font-ui"
+                disabled={!adminToken.trim()}
+                onClick={handleActivateAdmin}
+                data-ocid="admin.claim.submit_button"
+              >
+                <Shield className="w-4 h-4 mr-2" />
+                Activate Admin
+              </Button>
+            </CardContent>
+          </Card>
+
           <Button
-            variant="outline"
+            variant="ghost"
+            className="w-full font-ui text-muted-foreground hover:text-foreground"
             onClick={() => navigate({ to: "/dashboard" })}
-            data-ocid="admin.back.button"
+            data-ocid="admin.claim.cancel_button"
           >
             Back to Dashboard
           </Button>
-        </div>
+        </motion.div>
       </div>
     );
   }
@@ -244,7 +460,7 @@ export default function AdminPage() {
       </motion.div>
 
       <Tabs defaultValue="users">
-        <TabsList className="bg-card border border-border h-auto p-1 mb-6">
+        <TabsList className="bg-card border border-border h-auto p-1 mb-6 flex-wrap gap-1">
           <TabsTrigger
             value="users"
             className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
@@ -252,6 +468,14 @@ export default function AdminPage() {
           >
             <Users className="w-4 h-4" />
             Users ({totalUsers})
+          </TabsTrigger>
+          <TabsTrigger
+            value="payments"
+            className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            data-ocid="admin.payments.tab"
+          >
+            <Receipt className="w-4 h-4" />
+            Payments ({paymentSubmissions?.length ?? 0})
           </TabsTrigger>
           <TabsTrigger
             value="videos"
@@ -273,71 +497,6 @@ export default function AdminPage() {
 
         {/* ── USERS TAB ── */}
         <TabsContent value="users">
-          {/* Last payment submission info from localStorage */}
-          {lastPaymentSubmission && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3 }}
-              className="mb-4"
-              data-ocid="admin.payment_submission.panel"
-            >
-              <div className="flex items-start gap-3 bg-primary/10 border border-primary/30 rounded-xl px-4 py-3">
-                <Receipt className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-ui font-semibold text-primary mb-1">
-                    Last Payment Submission
-                  </p>
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-body text-foreground/80">
-                    <span>
-                      <span className="text-muted-foreground">Name: </span>
-                      <span className="font-medium">
-                        {lastPaymentSubmission.userName}
-                      </span>
-                    </span>
-                    <span className="text-border hidden sm:inline">·</span>
-                    <span>
-                      <span className="text-muted-foreground">Phone: </span>
-                      <span className="font-medium">
-                        {lastPaymentSubmission.phone}
-                      </span>
-                    </span>
-                    <span className="text-border hidden sm:inline">·</span>
-                    <span>
-                      <span className="text-muted-foreground">UTR: </span>
-                      <span className="font-mono font-medium text-primary">
-                        {lastPaymentSubmission.txId}
-                      </span>
-                    </span>
-                    <span className="text-border hidden sm:inline">·</span>
-                    <span className="text-muted-foreground">
-                      {new Date(
-                        lastPaymentSubmission.submittedAt,
-                      ).toLocaleString("en-IN", {
-                        day: "2-digit",
-                        month: "short",
-                        year: "numeric",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </span>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.removeItem("tm11_payment_submission");
-                    setLastPaymentSubmission(null);
-                  }}
-                  className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 text-xs font-ui underline"
-                  aria-label="Dismiss payment submission"
-                >
-                  Dismiss
-                </button>
-              </div>
-            </motion.div>
-          )}
-
           <Card className="card-premium">
             <CardHeader className="pb-3">
               <CardTitle className="font-display font-bold text-lg text-foreground">
@@ -439,6 +598,205 @@ export default function AdminPage() {
                                 disabled={updateUserStatusMutation.isPending}
                                 data-ocid={`admin.users.switch.${ocidIndex}`}
                               />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </ScrollArea>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── PAYMENTS TAB ── */}
+        <TabsContent value="payments" data-ocid="admin.payments.panel">
+          <Card className="card-premium">
+            <CardHeader className="pb-3">
+              <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+                <Receipt className="w-5 h-5 text-primary" />
+                Payment Submissions
+              </CardTitle>
+              <p className="text-muted-foreground text-xs font-body mt-1">
+                Review and verify user payment proof submissions
+              </p>
+            </CardHeader>
+            <CardContent className="p-0">
+              {paymentsLoading ? (
+                <div
+                  className="p-5 space-y-3"
+                  data-ocid="admin.payments.loading_state"
+                >
+                  {["s1", "s2", "s3", "s4"].map((k) => (
+                    <Skeleton
+                      key={k}
+                      className="h-12 rounded-lg animate-shimmer"
+                    />
+                  ))}
+                </div>
+              ) : !paymentSubmissions || paymentSubmissions.length === 0 ? (
+                <div
+                  className="p-10 text-center"
+                  data-ocid="admin.payments.empty_state"
+                >
+                  <Receipt className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                  <p className="text-muted-foreground font-body text-sm">
+                    No payment submissions yet
+                  </p>
+                </div>
+              ) : (
+                <ScrollArea className="max-h-[560px]">
+                  <Table data-ocid="admin.payments.table">
+                    <TableHeader>
+                      <TableRow className="border-border hover:bg-transparent">
+                        {[
+                          "Name",
+                          "Phone",
+                          "UTR / Transaction ID",
+                          "Status",
+                          "Submitted At",
+                          "Actions",
+                        ].map((h) => (
+                          <TableHead
+                            key={h}
+                            className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
+                          >
+                            {h}
+                          </TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {paymentSubmissions.map((submission, i) => {
+                        const ocidIndex = i + 1;
+                        const submittedAt = new Date(
+                          Number(submission.timestamp / BigInt(1_000_000)),
+                        ).toLocaleString("en-IN", {
+                          day: "2-digit",
+                          month: "short",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        });
+                        const isPending = submission.status === "pending";
+                        return (
+                          <TableRow
+                            key={submission.id.toString()}
+                            className="border-border hover:bg-muted/20 transition-colors"
+                            data-ocid={`admin.payments.item.${ocidIndex}`}
+                          >
+                            <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
+                              {submission.name}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                              {submission.phone}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
+                                {submission.utr}
+                              </span>
+                            </TableCell>
+                            <TableCell className="py-3">
+                              <Badge
+                                variant="outline"
+                                className={
+                                  submission.status === "approved"
+                                    ? "border-green-500/30 text-green-300 bg-green-500/10 text-xs"
+                                    : submission.status === "rejected"
+                                      ? "border-red-500/30 text-red-300 bg-red-500/10 text-xs"
+                                      : "border-amber-500/30 text-amber-300 bg-amber-500/10 text-xs"
+                                }
+                              >
+                                {submission.status === "approved" && (
+                                  <CheckCircle className="w-3 h-3 mr-1" />
+                                )}
+                                {submission.status === "rejected" && (
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                )}
+                                {String(submission.status)
+                                  .charAt(0)
+                                  .toUpperCase() +
+                                  String(submission.status).slice(1)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="py-3 text-xs text-muted-foreground font-body whitespace-nowrap">
+                              {submittedAt}
+                            </TableCell>
+                            <TableCell className="py-3">
+                              {isPending ? (
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    size="sm"
+                                    onClick={async () => {
+                                      try {
+                                        await verifyPaymentMutation.mutateAsync(
+                                          {
+                                            submissionId: submission.id,
+                                            action: "approve",
+                                          },
+                                        );
+                                        toast.success(
+                                          `Payment approved for ${submission.name}`,
+                                        );
+                                      } catch (err) {
+                                        const msg =
+                                          err instanceof Error
+                                            ? err.message
+                                            : "Failed to approve";
+                                        toast.error(msg);
+                                      }
+                                    }}
+                                    disabled={verifyPaymentMutation.isPending}
+                                    className="bg-green-600 hover:bg-green-700 text-white font-ui text-xs h-7 px-2.5"
+                                    data-ocid={`admin.payments.confirm_button.${ocidIndex}`}
+                                  >
+                                    {verifyPaymentMutation.isPending ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <CheckCircle className="w-3 h-3 mr-1" />
+                                    )}
+                                    Approve
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={async () => {
+                                      try {
+                                        await verifyPaymentMutation.mutateAsync(
+                                          {
+                                            submissionId: submission.id,
+                                            action: "reject",
+                                          },
+                                        );
+                                        toast.success(
+                                          `Payment rejected for ${submission.name}`,
+                                        );
+                                      } catch (err) {
+                                        const msg =
+                                          err instanceof Error
+                                            ? err.message
+                                            : "Failed to reject";
+                                        toast.error(msg);
+                                      }
+                                    }}
+                                    disabled={verifyPaymentMutation.isPending}
+                                    className="border-red-500/30 text-red-400 hover:bg-red-500/10 font-ui text-xs h-7 px-2.5"
+                                    data-ocid={`admin.payments.delete_button.${ocidIndex}`}
+                                  >
+                                    {verifyPaymentMutation.isPending ? (
+                                      <Loader2 className="w-3 h-3 animate-spin" />
+                                    ) : (
+                                      <XCircle className="w-3 h-3 mr-1" />
+                                    )}
+                                    Reject
+                                  </Button>
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground font-body italic">
+                                  Resolved
+                                </span>
+                              )}
                             </TableCell>
                           </TableRow>
                         );

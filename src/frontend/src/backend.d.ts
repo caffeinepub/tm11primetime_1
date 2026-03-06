@@ -22,6 +22,20 @@ export interface ReferralNode {
     name: string;
     children: Array<ReferralNode>;
 }
+export interface PaymentSubmissionInput {
+    utr: string;
+    name: string;
+    phone: string;
+}
+export interface PaymentSubmission {
+    id: bigint;
+    utr: string;
+    status: PaymentStatus;
+    userId: bigint;
+    name: string;
+    timestamp: bigint;
+    phone: string;
+}
 export interface User {
     id: bigint;
     referralCode: string;
@@ -56,6 +70,11 @@ export interface Transaction {
     txType: string;
     amount: bigint;
 }
+export enum PaymentStatus {
+    pending = "pending",
+    approved = "approved",
+    rejected = "rejected"
+}
 export enum UserRole {
     admin = "admin",
     user = "user",
@@ -64,12 +83,13 @@ export enum UserRole {
 export interface backendInterface {
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
-    completePayment(userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
+    getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
+    getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getMyProfile(userId: bigint): Promise<User>;
     getMyWatchHistory(userId: bigint): Promise<Array<WatchRecord>>;
     getReferralTree(userId: bigint): Promise<ReferralNode>;
@@ -80,5 +100,9 @@ export interface backendInterface {
     recordWatchProgress(userId: bigint, videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
     register(name: string, email: string, phone: string, referredBy: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
+    verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
+    claimFirstAdmin(): Promise<void>;
+    isAdminAssigned(): Promise<boolean>;
 }

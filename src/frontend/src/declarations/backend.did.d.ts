@@ -10,6 +10,23 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export type PaymentStatus = { 'pending' : null } |
+  { 'approved' : null } |
+  { 'rejected' : null };
+export interface PaymentSubmission {
+  'id' : bigint,
+  'utr' : string,
+  'status' : PaymentStatus,
+  'userId' : bigint,
+  'name' : string,
+  'timestamp' : bigint,
+  'phone' : string,
+}
+export interface PaymentSubmissionInput {
+  'utr' : string,
+  'name' : string,
+  'phone' : string,
+}
 export interface ReferralNode {
   'id' : bigint,
   'referralCode' : string,
@@ -66,12 +83,13 @@ export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addVideo' : ActorMethod<[string, string, string, string, bigint], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
-  'completePayment' : ActorMethod<[bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,
+  'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getAllUsers' : ActorMethod<[], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
+  'getMyPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getMyProfile' : ActorMethod<[bigint], User>,
   'getMyWatchHistory' : ActorMethod<[bigint], Array<WatchRecord>>,
   'getReferralTree' : ActorMethod<[bigint], ReferralNode>,
@@ -85,7 +103,9 @@ export interface _SERVICE {
   >,
   'register' : ActorMethod<[string, string, string, string], string>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'submitPaymentProof' : ActorMethod<[PaymentSubmissionInput], bigint>,
   'updateUserStatus' : ActorMethod<[bigint, boolean], undefined>,
+  'verifyPaymentSubmission' : ActorMethod<[bigint, string], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

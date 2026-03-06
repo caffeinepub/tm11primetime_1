@@ -11,7 +11,8 @@ import {
   ChevronRight,
   Copy,
   Crown,
-  Loader2,
+  Lock,
+  MessageCircle,
   Play,
   TrendingUp,
   Users,
@@ -170,6 +171,13 @@ export default function DashboardPage() {
     setCopied(true);
     toast.success("Referral link copied!");
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const shareOnWhatsApp = () => {
+    const referralCode = userProfile?.referralCode ?? "";
+    const message = `Join Tm11primeTime! Use my referral code *${referralCode}* to register: ${referralLink}`;
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://wa.me/?text=${encodedMessage}`, "_blank");
   };
 
   if (isLoading) {
@@ -346,37 +354,77 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="flex items-center gap-3">
-              <div className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 py-2.5 min-w-0">
-                <div className="font-body text-sm text-muted-foreground truncate">
-                  {referralLink ||
-                    "Complete registration to get your referral link"}
+            {userProfile?.isPaid ? (
+              /* ── Active: show link, copy button, code, and WhatsApp share ── */
+              <>
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 py-2.5 min-w-0">
+                    <div className="font-body text-sm text-muted-foreground truncate">
+                      {referralLink ||
+                        "Complete registration to get your referral link"}
+                    </div>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={copyReferralLink}
+                    disabled={!referralLink}
+                    className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground shrink-0"
+                    data-ocid="dashboard.referral.copy.button"
+                  >
+                    {copied ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                    {copied ? "Copied!" : "Copy"}
+                  </Button>
                 </div>
-              </div>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={copyReferralLink}
-                disabled={!referralLink}
-                className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground shrink-0"
-                data-ocid="dashboard.referral.copy.button"
-              >
-                {copied ? (
-                  <Check className="w-4 h-4" />
-                ) : (
-                  <Copy className="w-4 h-4" />
+
+                {userProfile?.referralCode && (
+                  <div className="flex items-center flex-wrap gap-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-muted-foreground text-xs font-ui">
+                        Your code:
+                      </span>
+                      <code className="text-primary text-sm font-ui font-bold bg-primary/10 px-2 py-0.5 rounded">
+                        {userProfile.referralCode}
+                      </code>
+                    </div>
+
+                    {/* WhatsApp Share Button */}
+                    <Button
+                      size="sm"
+                      onClick={shareOnWhatsApp}
+                      disabled={!referralLink}
+                      className="bg-green-600 hover:bg-green-700 text-white shrink-0 gap-1.5"
+                      data-ocid="dashboard.referral.whatsapp.button"
+                    >
+                      <MessageCircle className="w-4 h-4" />
+                      Share on WhatsApp
+                    </Button>
+                  </div>
                 )}
-                {copied ? "Copied!" : "Copy"}
-              </Button>
-            </div>
-            {userProfile?.referralCode && (
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground text-xs font-ui">
-                  Your code:
-                </span>
-                <code className="text-primary text-sm font-ui font-bold bg-primary/10 px-2 py-0.5 rounded">
-                  {userProfile.referralCode}
-                </code>
+              </>
+            ) : (
+              /* ── Locked: payment not yet approved ── */
+              <div
+                className="flex items-start gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-4"
+                data-ocid="dashboard.referral.locked.card"
+              >
+                <div className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                  <Lock className="w-4 h-4 text-muted-foreground" />
+                </div>
+                <div>
+                  <p className="font-ui font-medium text-sm text-muted-foreground">
+                    Referral Code Pending
+                  </p>
+                  <p className="font-body text-xs text-muted-foreground/70 mt-0.5 leading-relaxed">
+                    Your referral code will be available after admin approves
+                    your payment. Once approved, you'll be able to invite
+                    friends and earn rewards.
+                  </p>
+                </div>
               </div>
             )}
           </CardContent>
