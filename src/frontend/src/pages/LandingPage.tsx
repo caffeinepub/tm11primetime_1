@@ -62,13 +62,11 @@ export default function LandingPage() {
   );
 
   const isCheckingProfile =
-    !!identity &&
-    !isInitializing &&
-    (profileLoading || (userProfile != null && myProfileLoading));
+    !!identity && (profileLoading || (userProfile != null && myProfileLoading));
 
   // Once we have identity and profile data, decide redirect destination
   useEffect(() => {
-    if (!identity || isInitializing) return;
+    if (!identity) return;
     // Still loading profile info — wait
     if (profileLoading) return;
     // No profile → new user, stay on landing
@@ -84,7 +82,6 @@ export default function LandingPage() {
     }
   }, [
     identity,
-    isInitializing,
     profileLoading,
     userProfile,
     myProfileLoading,
@@ -93,9 +90,8 @@ export default function LandingPage() {
   ]);
 
   const handleLogin = () => {
-    if (!identity) {
-      login();
-    }
+    if (identity) return; // redirect handled by useEffect
+    login();
   };
 
   // Show full-screen loading spinner while checking profile after login
@@ -193,10 +189,14 @@ export default function LandingPage() {
                 className="border-border text-foreground hover:bg-secondary font-ui text-base px-8 py-6"
                 data-ocid="landing.login.button"
               >
-                {isLoggingIn ? (
+                {isLoggingIn || isInitializing ? (
                   <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                 ) : null}
-                {isLoggingIn ? "Connecting..." : "Login"}
+                {isLoggingIn
+                  ? "Connecting..."
+                  : isInitializing
+                    ? "Loading..."
+                    : "Login"}
               </Button>
             </div>
 

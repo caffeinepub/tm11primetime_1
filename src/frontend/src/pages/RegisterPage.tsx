@@ -278,11 +278,16 @@ export default function RegisterPage() {
             >
               <Card className="card-premium">
                 <CardHeader className="pb-4">
-                  <CardTitle className="font-display font-bold text-2xl text-foreground">
-                    Create Your Account
-                  </CardTitle>
+                  <div className="flex items-center gap-2.5 mb-1">
+                    <div className="w-9 h-9 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
+                      <Phone className="w-4 h-4 text-primary" />
+                    </div>
+                    <CardTitle className="font-display font-bold text-2xl text-foreground">
+                      Login / Register
+                    </CardTitle>
+                  </div>
                   <p className="text-muted-foreground text-sm font-body">
-                    Join Tm11primeTime and start earning today
+                    Enter your mobile number to get started
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-5">
@@ -315,6 +320,42 @@ export default function RegisterPage() {
                       </AlertDescription>
                     </Alert>
                   )}
+
+                  {/* Phone Number — PRIMARY field, visually prominent */}
+                  <div className="space-y-1.5">
+                    <Label
+                      htmlFor="phone"
+                      className="font-ui text-sm font-semibold text-foreground"
+                    >
+                      Mobile Number *
+                    </Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
+                      <Input
+                        id="phone"
+                        name="phone"
+                        type="tel"
+                        value={form.phone}
+                        onChange={handleChange}
+                        placeholder="+91 98765 43210"
+                        className="pl-10 h-12 text-base bg-input border-border font-body border-primary/40 focus:border-primary ring-primary/20"
+                        autoComplete="tel"
+                        data-ocid="register.phone.input"
+                      />
+                    </div>
+                    <p className="text-xs text-muted-foreground font-body">
+                      Your mobile number is your primary account identifier
+                    </p>
+                  </div>
+
+                  {/* Divider between primary and secondary fields */}
+                  <div className="relative flex items-center gap-3">
+                    <div className="flex-1 h-px bg-border" />
+                    <span className="text-xs text-muted-foreground font-ui uppercase tracking-widest">
+                      Profile Details
+                    </span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
 
                   <div className="space-y-1.5">
                     <Label
@@ -361,28 +402,6 @@ export default function RegisterPage() {
 
                   <div className="space-y-1.5">
                     <Label
-                      htmlFor="phone"
-                      className="font-ui text-sm text-foreground/80"
-                    >
-                      Phone Number *
-                    </Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="phone"
-                        name="phone"
-                        type="tel"
-                        value={form.phone}
-                        onChange={handleChange}
-                        placeholder="+91 98765 43210"
-                        className="pl-9 bg-input border-border font-body"
-                        data-ocid="register.phone.input"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label
                       htmlFor="referredBy"
                       className="font-ui text-sm text-foreground/80"
                     >
@@ -406,10 +425,7 @@ export default function RegisterPage() {
                     className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
                     onClick={handleRegister}
                     disabled={
-                      registerMutation.isPending ||
-                      !identity ||
-                      isLoggingIn ||
-                      isInitializing
+                      registerMutation.isPending || !identity || isLoggingIn
                     }
                     data-ocid="register.submit.button"
                   >
@@ -744,6 +760,21 @@ export default function RegisterPage() {
                   </p>
                 </CardContent>
               </Card>
+
+              {/* Go to Dashboard — secondary option below the payment card */}
+              <div className="mt-5 flex flex-col items-center gap-2">
+                <p className="text-xs text-muted-foreground font-body">
+                  Already submitted payment?
+                </p>
+                <button
+                  type="button"
+                  onClick={() => navigate({ to: "/dashboard" })}
+                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border bg-secondary/40 hover:bg-secondary/70 text-foreground/70 hover:text-foreground text-sm font-ui font-medium transition-all"
+                  data-ocid="register.payment.goto_dashboard.button"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
             </motion.div>
           )}
 
