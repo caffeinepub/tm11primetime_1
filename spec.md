@@ -1,31 +1,25 @@
 # Tm11primeTime
 
 ## Current State
-- Registration flow has 3 steps: form, payment, success
-- Payment step shows UPI ID to copy, deep-link buttons for PhonePe/GPay/BHIM, and an "I have Paid" button
-- Tapping "I have Paid" immediately calls `completePayment` on the backend and moves to success step
-- No transaction verification details are collected from the user
+- LandingPage redirects any authenticated user straight to `/dashboard`.
+- RegisterPage starts at the "form" step every time it loads; there is no logic to detect a returning user who has already registered but not paid.
+- Payment page (`/register`) is accessible from the sidebar as a static menu link.
 
 ## Requested Changes (Diff)
 
 ### Add
-- A payment submission sub-form on the payment step, shown after user taps "I have Paid"
-- Fields: Transaction ID / UTR Number, Full Name (pre-filled from registration), Phone Number (pre-filled from registration)
-- A "Confirm Payment" button that submits this info alongside `completePayment`
-- Display of submitted UTR/name/phone in the admin panel so admin can verify
+- After login, if the user is already registered (`getCallerUserProfile()` returns a profile) but has `isPaid = false` (no approved payment), automatically redirect them to `/register` and pre-skip to the **payment step** instead of showing the registration form again.
+- In `RegisterPage`, on mount while identity is present, call `getCallerUserProfile()`. If a profile already exists (user is registered), jump directly to the "payment" step so they can complete the UPI payment -- bypassing the registration form.
 
 ### Modify
-- Replace the direct `completePayment` call on "I have Paid" button with showing an inline form for UTR/transaction ID submission
-- After user fills the form and confirms, then call `completePayment` and proceed to success
-- Admin user list or transaction list should show the submitted UTR info for each user
+- `LandingPage.tsx`: change the redirect-on-authenticated logic so it checks whether the user profile has `isPaid` set. If not paid, send to `/register`; if paid (or profile fetch fails), send to `/dashboard`.
+- `RegisterPage.tsx`: add a `useEffect` that fires when identity becomes available -- fetches the caller profile, and if a profile already exists, transitions the step state to `"payment"` automatically.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-1. Add state fields in RegisterPage for: `utrForm` (txId, userName, phone), `showUtrForm` boolean
-2. "I have Paid" button sets `showUtrForm = true` instead of directly calling `completePayment`
-3. Render a new inline card/panel with three inputs: Transaction ID / UTR Number, User Name (pre-filled), Phone Number (pre-filled)
-4. "Confirm Payment" button validates inputs and calls `completePayment`, then navigates to success
-5. Store UTR info client-side (localStorage or state) and display in admin panel if backend has no dedicated field
-6. Admin panel: show UTR / transaction submission note in the user row details
+1. In `RegisterPage.tsx`, import `useCallerUserProfile` (or call the actor directly via `useActor`) to detect existing registration on load.
+2. Add a `useEffect` in `RegisterPage` watching `identity` + actor readiness: if `getCallerUserProfile()` returns a non-null profile and step is still "form", set step to "payment" and pre-fill the utrForm name/phone from the existing profile.
+3. In `LandingPage.tsx`, import `useCallerUserProfile` and after identity is available, check the profile's `isPaid` field. Redirect to `/register` if not paid, `/dashboard` if paid.
+4. Add a loading indicator in LandingPage while the profile check is in flight (avoid flash of content).

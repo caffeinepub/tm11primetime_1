@@ -108,6 +108,7 @@ export interface PaymentSubmissionInput {
     utr: string;
     name: string;
     phone: string;
+    amount: string;
 }
 export interface PaymentSubmission {
     id: bigint;
@@ -117,6 +118,7 @@ export interface PaymentSubmission {
     name: string;
     timestamp: bigint;
     phone: string;
+    amount: string;
 }
 export interface User {
     id: bigint;
@@ -166,6 +168,8 @@ export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    claimFirstAdmin(): Promise<void>;
+    deleteUser(userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
@@ -174,16 +178,18 @@ export interface backendInterface {
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getMyProfile(userId: bigint): Promise<User>;
-    getMyWatchHistory(userId: bigint): Promise<Array<WatchRecord>>;
+    getMyWatchHistory(): Promise<Array<WatchRecord>>;
     getReferralTree(userId: bigint): Promise<ReferralNode>;
-    getTransactions(userId: bigint): Promise<Array<Transaction>>;
+    getTransactions(): Promise<Array<Transaction>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
+    isAdminAssigned(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
-    recordWatchProgress(userId: bigint, videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
+    recordWatchProgress(videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
     register(name: string, email: string, phone: string, referredBy: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
+    updateUser(userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
     verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
 }
@@ -229,6 +235,34 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.assignCallerUserRole(arg0, to_candid_UserRole_n1(this._uploadFile, this._downloadFile, arg1));
+            return result;
+        }
+    }
+    async claimFirstAdmin(): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.claimFirstAdmin();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.claimFirstAdmin();
+            return result;
+        }
+    }
+    async deleteUser(arg0: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteUser(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteUser(arg0);
             return result;
         }
     }
@@ -344,17 +378,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getMyWatchHistory(arg0: bigint): Promise<Array<WatchRecord>> {
+    async getMyWatchHistory(): Promise<Array<WatchRecord>> {
         if (this.processError) {
             try {
-                const result = await this.actor.getMyWatchHistory(arg0);
+                const result = await this.actor.getMyWatchHistory();
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getMyWatchHistory(arg0);
+            const result = await this.actor.getMyWatchHistory();
             return result;
         }
     }
@@ -372,17 +406,17 @@ export class Backend implements backendInterface {
             return from_candid_ReferralNode_n11(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getTransactions(arg0: bigint): Promise<Array<Transaction>> {
+    async getTransactions(): Promise<Array<Transaction>> {
         if (this.processError) {
             try {
-                const result = await this.actor.getTransactions(arg0);
+                const result = await this.actor.getTransactions();
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getTransactions(arg0);
+            const result = await this.actor.getTransactions();
             return result;
         }
     }
@@ -414,6 +448,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async isAdminAssigned(): Promise<boolean> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.isAdminAssigned();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.isAdminAssigned();
+            return result;
+        }
+    }
     async isCallerAdmin(): Promise<boolean> {
         if (this.processError) {
             try {
@@ -428,17 +476,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async recordWatchProgress(arg0: bigint, arg1: bigint, arg2: bigint, arg3: boolean): Promise<void> {
+    async recordWatchProgress(arg0: bigint, arg1: bigint, arg2: boolean): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.recordWatchProgress(arg0, arg1, arg2, arg3);
+                const result = await this.actor.recordWatchProgress(arg0, arg1, arg2);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.recordWatchProgress(arg0, arg1, arg2, arg3);
+            const result = await this.actor.recordWatchProgress(arg0, arg1, arg2);
             return result;
         }
     }
@@ -481,6 +529,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.submitPaymentProof(arg0);
+            return result;
+        }
+    }
+    async updateUser(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: boolean): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateUser(arg0, arg1, arg2, arg3, arg4);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateUser(arg0, arg1, arg2, arg3, arg4);
             return result;
         }
     }
@@ -554,6 +616,7 @@ function from_candid_record_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint
     name: string;
     timestamp: bigint;
     phone: string;
+    amount: string;
 }): {
     id: bigint;
     utr: string;
@@ -562,6 +625,7 @@ function from_candid_record_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint
     name: string;
     timestamp: bigint;
     phone: string;
+    amount: string;
 } {
     return {
         id: value.id,
@@ -570,7 +634,8 @@ function from_candid_record_n5(_uploadFile: (file: ExternalBlob) => Promise<Uint
         userId: value.userId,
         name: value.name,
         timestamp: value.timestamp,
-        phone: value.phone
+        phone: value.phone,
+        amount: value.amount
     };
 }
 function from_candid_variant_n10(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {

@@ -1,7 +1,5 @@
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
@@ -13,9 +11,9 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
-import { toast } from "sonner";
+import { useEffect } from "react";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useCallerUserProfile, useMyProfile } from "../hooks/useQueries";
 
 const LEVEL_EARNINGS = [
   { level: 1, amount: "₹10" },
@@ -56,18 +54,63 @@ export default function LandingPage() {
   const { login, isLoggingIn, isInitializing, identity } =
     useInternetIdentity();
 
-  const handleLogin = () => {
-    if (identity) {
+  // Fetch profile data to decide where to redirect logged-in users
+  const { data: userProfile, isLoading: profileLoading } =
+    useCallerUserProfile();
+  const { data: myProfile, isLoading: myProfileLoading } = useMyProfile(
+    userProfile?.userId ?? null,
+  );
+
+  const isCheckingProfile =
+    !!identity &&
+    !isInitializing &&
+    (profileLoading || (userProfile != null && myProfileLoading));
+
+  // Once we have identity and profile data, decide redirect destination
+  useEffect(() => {
+    if (!identity || isInitializing) return;
+    // Still loading profile info — wait
+    if (profileLoading) return;
+    // No profile → new user, stay on landing
+    if (userProfile == null) return;
+    // Profile exists but still loading full user details
+    if (myProfileLoading) return;
+    // Has profile + full user data
+    if (myProfile?.isPaid) {
       navigate({ to: "/dashboard" });
-      return;
+    } else {
+      // Registered but not paid → send to payment page
+      navigate({ to: "/register" });
     }
-    login();
+  }, [
+    identity,
+    isInitializing,
+    profileLoading,
+    userProfile,
+    myProfileLoading,
+    myProfile,
+    navigate,
+  ]);
+
+  const handleLogin = () => {
+    if (!identity) {
+      login();
+    }
   };
 
-  // Redirect if already authenticated
-  if (identity && !isInitializing) {
-    navigate({ to: "/dashboard" });
-    return null;
+  // Show full-screen loading spinner while checking profile after login
+  if (isCheckingProfile) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-gold animate-pulse-gold">
+          <Crown className="w-6 h-6 text-primary-foreground" />
+        </div>
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        <p className="text-muted-foreground font-ui text-sm">
+          Checking your account…
+        </p>
+      </div>
+    );
   }
 
   return (

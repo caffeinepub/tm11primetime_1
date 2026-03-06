@@ -13,6 +13,7 @@ import {
   Crown,
   Gift,
   Hash,
+  IndianRupee,
   Loader2,
   Mail,
   Phone,
@@ -20,10 +21,12 @@ import {
   User,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
+  useCallerUserProfile,
+  useMyProfile,
   useRegisterMutation,
   useSubmitPaymentProofMutation,
 } from "../hooks/useQueries";
@@ -50,11 +53,57 @@ export default function RegisterPage() {
     txId: "",
     userName: form.name,
     phone: form.phone,
+    amount: "118",
   });
   const [utrError, setUtrError] = useState<string | null>(null);
 
   const registerMutation = useRegisterMutation();
   const submitPaymentProofMutation = useSubmitPaymentProofMutation();
+
+  // Check if user is already registered (returning next-day user scenario)
+  const { data: userProfile, isLoading: profileLoading } =
+    useCallerUserProfile();
+  const { data: myProfile, isLoading: myProfileLoading } = useMyProfile(
+    userProfile?.userId ?? null,
+  );
+
+  // Auto-jump to payment step if already registered but not yet paid
+  useEffect(() => {
+    if (step !== "form") return;
+    if (!identity || isInitializing) return;
+    if (profileLoading || myProfileLoading) return;
+
+    if (myProfile) {
+      if (myProfile.isPaid) {
+        // Already fully paid → go to dashboard
+        navigate({ to: "/dashboard" });
+        return;
+      }
+      // Registered but not paid → jump to payment step with pre-filled data
+      setStep("payment");
+      setUtrForm((prev) => ({
+        ...prev,
+        userName: myProfile.name || userProfile?.name || "",
+        phone: myProfile.phone || userProfile?.phone || "",
+      }));
+    }
+  }, [
+    step,
+    identity,
+    isInitializing,
+    profileLoading,
+    myProfileLoading,
+    myProfile,
+    userProfile,
+    navigate,
+  ]);
+
+  // Show loading spinner while checking profile for returning users
+  const isCheckingProfile =
+    !!identity &&
+    !isInitializing &&
+    step === "form" &&
+    (profileLoading || (userProfile != null && myProfileLoading));
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -91,6 +140,7 @@ export default function RegisterPage() {
       txId: "",
       userName: form.name,
       phone: form.phone,
+      amount: String(total),
     });
     setUtrError(null);
     setShowUtrForm(true);
@@ -106,12 +156,16 @@ export default function RegisterPage() {
       setUtrError("Please enter your Transaction ID or UTR Number.");
       return;
     }
-    if (!utrForm.userName.trim()) {
-      setUtrError("Please enter your name.");
-      return;
-    }
     if (!utrForm.phone.trim()) {
       setUtrError("Please enter your phone number.");
+      return;
+    }
+    if (!utrForm.amount.trim()) {
+      setUtrError("Please enter the amount you paid.");
+      return;
+    }
+    if (!utrForm.userName.trim()) {
+      setUtrError("Please enter your name.");
       return;
     }
 
@@ -121,6 +175,7 @@ export default function RegisterPage() {
         utr: utrForm.txId.trim(),
         name: utrForm.userName.trim(),
         phone: utrForm.phone.trim(),
+        amount: utrForm.amount.trim(),
       });
 
       setStep("success");
@@ -135,6 +190,21 @@ export default function RegisterPage() {
   const gst = 18;
   const gstAmount = Math.round((membershipFee * gst) / 100);
   const total = membershipFee + gstAmount;
+
+  // Show full-screen loading while checking returning user's payment status
+  if (isCheckingProfile) {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
+        <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-gold animate-pulse-gold">
+          <Crown className="w-6 h-6 text-primary-foreground" />
+        </div>
+        <Loader2 className="w-8 h-8 text-primary animate-spin" />
+        <p className="text-muted-foreground font-ui text-sm">
+          Loading your account…
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -568,28 +638,6 @@ export default function RegisterPage() {
                           </div>
                         </div>
 
-                        {/* Name */}
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="utrUserName"
-                            className="font-ui text-sm text-foreground/80"
-                          >
-                            Your Name *
-                          </Label>
-                          <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="utrUserName"
-                              name="userName"
-                              value={utrForm.userName}
-                              onChange={handleUtrFormChange}
-                              placeholder="Enter your full name"
-                              className="pl-9 bg-input border-border font-body"
-                              data-ocid="register.utr_name.input"
-                            />
-                          </div>
-                        </div>
-
                         {/* Phone */}
                         <div className="space-y-1.5">
                           <Label
@@ -609,6 +657,52 @@ export default function RegisterPage() {
                               placeholder="+91 98765 43210"
                               className="pl-9 bg-input border-border font-body"
                               data-ocid="register.utr_phone.input"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Amount */}
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor="utrAmount"
+                            className="font-ui text-sm text-foreground/80"
+                          >
+                            Amount Paid (₹) *
+                          </Label>
+                          <div className="relative">
+                            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              id="utrAmount"
+                              name="amount"
+                              type="number"
+                              min="1"
+                              value={utrForm.amount}
+                              onChange={handleUtrFormChange}
+                              placeholder="Enter amount paid"
+                              className="pl-9 bg-input border-border font-body"
+                              data-ocid="register.utr_amount.input"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Name */}
+                        <div className="space-y-1.5">
+                          <Label
+                            htmlFor="utrUserName"
+                            className="font-ui text-sm text-foreground/80"
+                          >
+                            Your Name *
+                          </Label>
+                          <div className="relative">
+                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <Input
+                              id="utrUserName"
+                              name="userName"
+                              value={utrForm.userName}
+                              onChange={handleUtrFormChange}
+                              placeholder="Enter your full name"
+                              className="pl-9 bg-input border-border font-body"
+                              data-ocid="register.utr_name.input"
                             />
                           </div>
                         </div>

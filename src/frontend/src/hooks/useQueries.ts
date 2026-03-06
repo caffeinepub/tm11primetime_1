@@ -67,7 +67,7 @@ export function useTransactions(userId: bigint | null) {
     queryKey: ["transactions", userId?.toString()],
     queryFn: async () => {
       if (!actor || userId === null) return [];
-      return actor.getTransactions(userId);
+      return actor.getTransactions();
     },
     enabled: !!actor && !isFetching && userId !== null,
   });
@@ -106,7 +106,7 @@ export function useWatchHistory(userId: bigint | null) {
     queryKey: ["watchHistory", userId?.toString()],
     queryFn: async () => {
       if (!actor || userId === null) return [];
-      return actor.getMyWatchHistory(userId);
+      return actor.getMyWatchHistory();
     },
     enabled: !!actor && !isFetching && userId !== null,
   });
@@ -146,7 +146,7 @@ export function useIsAdminAssigned() {
     queryKey: ["isAdminAssigned"],
     queryFn: async () => {
       if (!actor) return false;
-      return (actor as any).isAdminAssigned();
+      return actor.isAdminAssigned();
     },
     enabled: !!actor && !isFetching,
   });
@@ -158,7 +158,7 @@ export function useClaimFirstAdminMutation() {
   return useMutation({
     mutationFn: async () => {
       if (!actor) throw new Error("Not connected");
-      await (actor as any).claimFirstAdmin();
+      await actor.claimFirstAdmin();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
@@ -171,12 +171,14 @@ export function useInitializeAdminMutation() {
   const { actor } = useActor();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (secret: string) => {
+    mutationFn: async (_secret: string) => {
       if (!actor) throw new Error("Not connected");
-      await (actor as any)._initializeAccessControlWithSecret(secret);
+      // Legacy function removed -- use claimFirstAdmin instead
+      await actor.claimFirstAdmin();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isAdminAssigned"] });
     },
   });
 }
@@ -247,7 +249,7 @@ export function useRecordWatchProgressMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      userId,
+      userId: _userId,
       videoId,
       watchedSeconds,
       subscribed,
@@ -258,12 +260,7 @@ export function useRecordWatchProgressMutation() {
       subscribed: boolean;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.recordWatchProgress(
-        userId,
-        videoId,
-        watchedSeconds,
-        subscribed,
-      );
+      await actor.recordWatchProgress(videoId, watchedSeconds, subscribed);
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({
@@ -329,6 +326,46 @@ export function useDeleteVideoMutation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allVideos"] });
+    },
+  });
+}
+
+export function useUpdateUserMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      userId,
+      name,
+      email,
+      phone,
+      isActive,
+    }: {
+      userId: bigint;
+      name: string;
+      email: string;
+      phone: string;
+      isActive: boolean;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      await actor.updateUser(userId, name, email, phone, isActive);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+    },
+  });
+}
+
+export function useDeleteUserMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (userId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      await actor.deleteUser(userId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allUsers"] });
     },
   });
 }

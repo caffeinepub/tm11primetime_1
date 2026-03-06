@@ -1,4 +1,14 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +30,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -38,13 +47,14 @@ import {
   AlertCircle,
   BarChart3,
   CheckCircle,
-  Copy,
-  Info,
+  Eye,
+  EyeOff,
   Loader2,
+  Lock,
+  Pencil,
   PlayCircle,
   Plus,
   Receipt,
-  RefreshCw,
   Shield,
   Trash2,
   Users,
@@ -53,18 +63,25 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
+import type { User } from "../backend.d";
 import {
   useAddVideoMutation,
   useAllPaymentSubmissions,
   useAllUsers,
   useAllVideos,
   useClaimFirstAdminMutation,
+  useDeleteUserMutation,
   useDeleteVideoMutation,
   useIsAdmin,
   useIsAdminAssigned,
+  useUpdateUserMutation,
   useUpdateUserStatusMutation,
   useVerifyPaymentSubmissionMutation,
 } from "../hooks/useQueries";
+
+// Admin PIN -- change this to your preferred password
+const ADMIN_PIN = "admin@tm11";
+const ADMIN_SESSION_KEY = "tm11_admin_unlocked";
 
 const VIDEO_CATEGORIES = [
   "Tutorial",
@@ -94,8 +111,7 @@ const initialFormData: AddVideoFormData = {
 export default function AdminPage() {
   const navigate = useNavigate();
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
-  const { data: isAdminAssigned, isLoading: adminAssignedLoading } =
-    useIsAdminAssigned();
+  const { data: isAdminAssigned } = useIsAdminAssigned();
   const claimFirstAdminMutation = useClaimFirstAdminMutation();
   const { data: users, isLoading: usersLoading } = useAllUsers();
   const { data: videos, isLoading: videosLoading } = useAllVideos();
@@ -103,6 +119,8 @@ export default function AdminPage() {
     useAllPaymentSubmissions();
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
+  const updateUserMutation = useUpdateUserMutation();
+  const deleteUserMutation = useDeleteUserMutation();
   const addVideoMutation = useAddVideoMutation();
   const deleteVideoMutation = useDeleteVideoMutation();
   const verifyPaymentMutation = useVerifyPaymentSubmissionMutation();
@@ -110,7 +128,29 @@ export default function AdminPage() {
   const [addVideoOpen, setAddVideoOpen] = useState(false);
   const [videoForm, setVideoForm] = useState<AddVideoFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
-  const [adminToken, setAdminToken] = useState("");
+
+  // PIN login state
+  const [pinUnlocked, setPinUnlocked] = useState(
+    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1",
+  );
+  const [pinInput, setPinInput] = useState("");
+  const [pinError, setPinError] = useState("");
+  const [showPin, setShowPin] = useState(false);
+  const [pinLoading, setPinLoading] = useState(false);
+
+  // Edit user dialog state
+  const [editUser, setEditUser] = useState<User | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    email: "",
+    phone: "",
+    isActive: true,
+  });
+  const [editOpen, setEditOpen] = useState(false);
+
+  // Delete user dialog state
+  const [deleteUserId, setDeleteUserId] = useState<bigint | null>(null);
+  const [deleteUserName, setDeleteUserName] = useState("");
 
   const handleVideoFormChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -179,7 +219,76 @@ export default function AdminPage() {
     }
   };
 
-  if (adminLoading || adminAssignedLoading) {
+  const handleOpenEditUser = (user: User) => {
+    setEditUser(user);
+    setEditForm({
+      name: user.name,
+      email: user.email,
+      phone: user.phone,
+      isActive: user.isActive,
+    });
+    setEditOpen(true);
+  };
+
+  const handleSaveEditUser = async () => {
+    if (!editUser) return;
+    try {
+      await updateUserMutation.mutateAsync({
+        userId: editUser.id,
+        name: editForm.name.trim(),
+        email: editForm.email.trim(),
+        phone: editForm.phone.trim(),
+        isActive: editForm.isActive,
+      });
+      toast.success("User updated successfully.");
+      setEditOpen(false);
+      setEditUser(null);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to update user";
+      toast.error(msg);
+    }
+  };
+
+  const handleConfirmDeleteUser = async () => {
+    if (deleteUserId === null) return;
+    try {
+      await deleteUserMutation.mutateAsync(deleteUserId);
+      toast.success(`"${deleteUserName}" removed.`);
+      setDeleteUserId(null);
+      setDeleteUserName("");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to delete user";
+      toast.error(msg);
+    }
+  };
+
+  const handlePinLogin = async () => {
+    if (!pinInput.trim()) {
+      setPinError("Please enter your admin PIN.");
+      return;
+    }
+    if (pinInput !== ADMIN_PIN) {
+      setPinError("Incorrect PIN. Please try again.");
+      setPinInput("");
+      return;
+    }
+    setPinError("");
+    setPinLoading(true);
+    // Silently try to claim first admin on blockchain if not yet assigned
+    if (!isAdminAssigned) {
+      try {
+        await claimFirstAdminMutation.mutateAsync();
+      } catch {
+        // ignore -- may already be assigned or fail silently
+      }
+    }
+    sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
+    setPinUnlocked(true);
+    setPinLoading(false);
+    toast.success("Welcome, Admin!");
+  };
+
+  if (adminLoading) {
     return (
       <div className="p-6 space-y-4" data-ocid="admin.loading_state">
         <Skeleton className="h-8 w-48 animate-shimmer" />
@@ -188,232 +297,94 @@ export default function AdminPage() {
     );
   }
 
-  if (!isAdmin) {
-    const handleActivateAdmin = () => {
-      const token = adminToken.trim();
-      if (!token) {
-        toast.error("Please paste your admin token first.");
-        return;
-      }
-      sessionStorage.setItem("caffeineAdminToken", token);
-      toast.success("Token saved — reloading…");
-      window.location.reload();
-    };
-
-    const handleClaimFirstAdmin = async () => {
-      try {
-        await claimFirstAdminMutation.mutateAsync();
-        toast.success("You are now admin!");
-        window.location.reload();
-      } catch (err) {
-        const msg =
-          err instanceof Error ? err.message : "Failed to claim admin access";
-        toast.error(msg);
-      }
-    };
-
-    // Section A: No admin assigned yet — show "Become Admin" flow
-    if (!isAdminAssigned) {
-      return (
-        <div className="p-6 flex items-center justify-center min-h-[60vh]">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
-            className="w-full max-w-lg space-y-6"
-            data-ocid="admin.claim.panel"
-          >
-            {/* Header */}
-            <div className="text-center space-y-3">
-              <div className="relative mx-auto w-20 h-20">
-                <div className="w-20 h-20 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center">
-                  <Shield className="w-10 h-10 text-primary" />
-                </div>
-                <span className="absolute -top-1.5 -right-1.5 w-6 h-6 rounded-full bg-green-500 border-2 border-background flex items-center justify-center">
-                  <CheckCircle className="w-3.5 h-3.5 text-white" />
-                </span>
-              </div>
-              <div>
-                <h2 className="font-display font-black text-2xl text-foreground">
-                  Claim Admin Access
-                </h2>
-                <p className="text-muted-foreground text-sm font-body mt-1.5 leading-relaxed">
-                  No admin has been set up yet for this app.
-                </p>
-              </div>
-            </div>
-
-            {/* One-click claim card */}
-            <Card className="card-premium border border-primary/30 bg-primary/5">
-              <CardContent className="p-6 space-y-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                    <CheckCircle className="w-4 h-4 text-green-400" />
-                  </div>
-                  <div>
-                    <p className="font-ui font-semibold text-sm text-foreground">
-                      You are the app owner
-                    </p>
-                    <p className="text-muted-foreground text-sm font-body mt-0.5 leading-relaxed">
-                      Since no admin has been assigned yet, click the button
-                      below to become admin instantly. This can only be done
-                      once.
-                    </p>
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90"
-                  onClick={handleClaimFirstAdmin}
-                  disabled={claimFirstAdminMutation.isPending}
-                  data-ocid="admin.claim.primary_button"
-                >
-                  {claimFirstAdminMutation.isPending ? (
-                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                  ) : (
-                    <Shield className="w-5 h-5 mr-2" />
-                  )}
-                  {claimFirstAdminMutation.isPending
-                    ? "Claiming…"
-                    : "Become Admin"}
-                </Button>
-              </CardContent>
-            </Card>
-
-            <Button
-              variant="ghost"
-              className="w-full font-ui text-muted-foreground hover:text-foreground"
-              onClick={() => navigate({ to: "/dashboard" })}
-              data-ocid="admin.claim.cancel_button"
-            >
-              Back to Dashboard
-            </Button>
-          </motion.div>
-        </div>
-      );
-    }
-
-    // Section B: Admin already assigned, but you're not them — show token entry
+  // Show PIN login if not unlocked via PIN and not already admin on blockchain
+  if (!pinUnlocked && !isAdmin) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[60vh]">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4, ease: "easeOut" }}
-          className="w-full max-w-xl space-y-6"
-          data-ocid="admin.claim.panel"
+          className="w-full max-w-sm space-y-6"
+          data-ocid="admin.login.panel"
         >
-          {/* Header */}
+          {/* Logo */}
           <div className="text-center space-y-3">
-            <div className="w-16 h-16 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
-              <Shield className="w-8 h-8 text-primary" />
+            <div className="w-20 h-20 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
+              <Lock className="w-10 h-10 text-primary" />
             </div>
             <div>
               <h2 className="font-display font-black text-2xl text-foreground">
-                Admin Access Setup
+                Admin Login
               </h2>
               <p className="text-muted-foreground text-sm font-body mt-1">
-                Your admin token is stored in your Caffeine project's
-                environment variables as{" "}
-                <code className="font-mono text-primary bg-primary/10 px-1.5 py-0.5 rounded text-xs">
-                  CAFFEINE_ADMIN_TOKEN
-                </code>
+                Enter your admin PIN to access the panel
               </p>
             </div>
           </div>
 
-          {/* Step 1 — Automatic */}
-          <Card className="card-premium border border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display font-bold text-base text-foreground flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-primary/20 text-primary text-xs font-black flex items-center justify-center">
-                  1
-                </span>
-                <RefreshCw className="w-4 h-4 text-primary" />
-                Automatic (Preferred)
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0">
-              <p className="text-muted-foreground text-sm font-body leading-relaxed">
-                The Caffeine platform automatically passes your admin token via
-                the URL when you open the app from your project dashboard.{" "}
-                <strong className="text-foreground font-ui">
-                  If you just deployed this app, try refreshing the page.
-                </strong>
-              </p>
-              <Button
-                variant="outline"
-                className="mt-3 w-full border-primary/30 text-primary hover:bg-primary/10 font-ui"
-                onClick={() => window.location.reload()}
-                data-ocid="admin.claim.primary_button"
-              >
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Refresh Page
-              </Button>
-            </CardContent>
-          </Card>
-
-          <div className="flex items-center gap-3">
-            <Separator className="flex-1 bg-border" />
-            <span className="text-muted-foreground text-xs font-ui uppercase tracking-widest">
-              or
-            </span>
-            <Separator className="flex-1 bg-border" />
-          </div>
-
-          {/* Step 2 — Manual */}
-          <Card className="card-premium border border-border">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display font-bold text-base text-foreground flex items-center gap-2">
-                <span className="w-6 h-6 rounded-full bg-muted/40 text-muted-foreground text-xs font-black flex items-center justify-center">
-                  2
-                </span>
-                <Copy className="w-4 h-4 text-muted-foreground" />
-                Manual Token Entry
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-0 space-y-3">
-              <Alert className="border-amber-500/30 bg-amber-500/10">
-                <Info className="w-4 h-4 text-amber-400" />
-                <AlertDescription className="font-body text-xs text-foreground/80 leading-relaxed">
-                  Go to your{" "}
-                  <strong className="font-ui text-foreground">
-                    Caffeine project settings
-                  </strong>{" "}
-                  → Environment Variables → copy the value of{" "}
-                  <code className="font-mono text-primary bg-primary/10 px-1 rounded text-xs">
-                    CAFFEINE_ADMIN_TOKEN
-                  </code>
-                  , then paste it below.
-                </AlertDescription>
-              </Alert>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="adminToken" className="font-ui text-sm">
-                  Admin Token
+          <Card className="card-premium border border-primary/20">
+            <CardContent className="p-6 space-y-4">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="adminPin"
+                  className="font-ui text-sm text-foreground"
+                >
+                  Admin PIN
                 </Label>
-                <Input
-                  id="adminToken"
-                  type="password"
-                  value={adminToken}
-                  onChange={(e) => setAdminToken(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleActivateAdmin();
-                  }}
-                  placeholder="Paste your CAFFEINE_ADMIN_TOKEN here"
-                  className="bg-input border-border font-mono text-sm"
-                  data-ocid="admin.claim.input"
-                />
+                <div className="relative">
+                  <Input
+                    id="adminPin"
+                    type={showPin ? "text" : "password"}
+                    value={pinInput}
+                    onChange={(e) => {
+                      setPinInput(e.target.value);
+                      setPinError("");
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") handlePinLogin();
+                    }}
+                    placeholder="Enter admin PIN"
+                    className="bg-input border-border font-mono text-base pr-10"
+                    autoFocus
+                    data-ocid="admin.login.input"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPin((v) => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    tabIndex={-1}
+                  >
+                    {showPin ? (
+                      <EyeOff className="w-4 h-4" />
+                    ) : (
+                      <Eye className="w-4 h-4" />
+                    )}
+                  </button>
+                </div>
+                {pinError && (
+                  <p
+                    className="text-destructive text-sm font-body flex items-center gap-1.5"
+                    data-ocid="admin.login.error_state"
+                  >
+                    <AlertCircle className="w-3.5 h-3.5" />
+                    {pinError}
+                  </p>
+                )}
               </div>
 
               <Button
-                className="w-full bg-primary text-primary-foreground font-ui"
-                disabled={!adminToken.trim()}
-                onClick={handleActivateAdmin}
-                data-ocid="admin.claim.submit_button"
+                className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90"
+                onClick={handlePinLogin}
+                disabled={pinLoading || !pinInput.trim()}
+                data-ocid="admin.login.submit_button"
               >
-                <Shield className="w-4 h-4 mr-2" />
-                Activate Admin
+                {pinLoading ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <Shield className="w-5 h-5 mr-2" />
+                )}
+                {pinLoading ? "Logging in…" : "Login"}
               </Button>
             </CardContent>
           </Card>
@@ -422,7 +393,7 @@ export default function AdminPage() {
             variant="ghost"
             className="w-full font-ui text-muted-foreground hover:text-foreground"
             onClick={() => navigate({ to: "/dashboard" })}
-            data-ocid="admin.claim.cancel_button"
+            data-ocid="admin.login.cancel_button"
           >
             Back to Dashboard
           </Button>
@@ -590,14 +561,40 @@ export default function AdminPage() {
                               </Badge>
                             </TableCell>
                             <TableCell className="py-3">
-                              <Switch
-                                checked={user.isActive}
-                                onCheckedChange={() =>
-                                  handleToggleUserStatus(user.id, user.isActive)
-                                }
-                                disabled={updateUserStatusMutation.isPending}
-                                data-ocid={`admin.users.switch.${ocidIndex}`}
-                              />
+                              <div className="flex items-center gap-1.5">
+                                <Switch
+                                  checked={user.isActive}
+                                  onCheckedChange={() =>
+                                    handleToggleUserStatus(
+                                      user.id,
+                                      user.isActive,
+                                    )
+                                  }
+                                  disabled={updateUserStatusMutation.isPending}
+                                  data-ocid={`admin.users.switch.${ocidIndex}`}
+                                />
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => handleOpenEditUser(user)}
+                                  className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-8 h-8"
+                                  data-ocid={`admin.users.edit_button.${ocidIndex}`}
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() => {
+                                    setDeleteUserId(user.id);
+                                    setDeleteUserName(user.name);
+                                  }}
+                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
+                                  data-ocid={`admin.users.delete_button.${ocidIndex}`}
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -608,6 +605,153 @@ export default function AdminPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* ── Edit User Dialog ── */}
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent
+              className="bg-card border-border max-w-md"
+              data-ocid="admin.users.edit.dialog"
+            >
+              <DialogHeader>
+                <DialogTitle className="font-display font-bold text-foreground">
+                  Edit User
+                </DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="editName" className="font-ui text-sm">
+                    Full Name
+                  </Label>
+                  <Input
+                    id="editName"
+                    value={editForm.name}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    placeholder="Full name"
+                    className="bg-input border-border font-body"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editEmail" className="font-ui text-sm">
+                    Email
+                  </Label>
+                  <Input
+                    id="editEmail"
+                    type="email"
+                    value={editForm.email}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        email: e.target.value,
+                      }))
+                    }
+                    placeholder="Email address"
+                    className="bg-input border-border font-body"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="editPhone" className="font-ui text-sm">
+                    Phone
+                  </Label>
+                  <Input
+                    id="editPhone"
+                    type="tel"
+                    value={editForm.phone}
+                    onChange={(e) =>
+                      setEditForm((prev) => ({
+                        ...prev,
+                        phone: e.target.value,
+                      }))
+                    }
+                    placeholder="Phone number"
+                    className="bg-input border-border font-body"
+                  />
+                </div>
+                <div className="flex items-center justify-between py-1">
+                  <Label htmlFor="editActive" className="font-ui text-sm">
+                    Active Status
+                  </Label>
+                  <Switch
+                    id="editActive"
+                    checked={editForm.isActive}
+                    onCheckedChange={(checked) =>
+                      setEditForm((prev) => ({ ...prev, isActive: checked }))
+                    }
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  onClick={() => setEditOpen(false)}
+                  className="border-border font-ui"
+                  data-ocid="admin.users.edit.cancel_button"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handleSaveEditUser}
+                  disabled={updateUserMutation.isPending}
+                  className="bg-primary text-primary-foreground font-ui"
+                  data-ocid="admin.users.edit.save_button"
+                >
+                  {updateUserMutation.isPending ? (
+                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                  ) : null}
+                  {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* ── Delete User AlertDialog ── */}
+          <AlertDialog
+            open={deleteUserId !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDeleteUserId(null);
+                setDeleteUserName("");
+              }
+            }}
+          >
+            <AlertDialogContent
+              className="bg-card border-border"
+              data-ocid="admin.users.delete.dialog"
+            >
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display font-bold text-foreground">
+                  Delete User
+                </AlertDialogTitle>
+                <AlertDialogDescription className="font-body text-muted-foreground">
+                  Are you sure you want to permanently delete{" "}
+                  <span className="font-semibold text-foreground">
+                    "{deleteUserName}"
+                  </span>
+                  ? This action cannot be undone.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  className="font-ui border-border"
+                  data-ocid="admin.users.delete.cancel_button"
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmDeleteUser}
+                  disabled={deleteUserMutation.isPending}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-ui"
+                  data-ocid="admin.users.delete.confirm_button"
+                >
+                  {deleteUserMutation.isPending ? (
+                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                  ) : null}
+                  {deleteUserMutation.isPending ? "Deleting..." : "Delete User"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </TabsContent>
 
         {/* ── PAYMENTS TAB ── */}
@@ -653,6 +797,7 @@ export default function AdminPage() {
                         {[
                           "Name",
                           "Phone",
+                          "Amount",
                           "UTR / Transaction ID",
                           "Status",
                           "Submitted At",
@@ -691,6 +836,9 @@ export default function AdminPage() {
                             </TableCell>
                             <TableCell className="py-3 text-sm text-muted-foreground font-body">
                               {submission.phone}
+                            </TableCell>
+                            <TableCell className="py-3 text-sm font-display font-bold text-green-400 whitespace-nowrap">
+                              ₹{submission.amount}
                             </TableCell>
                             <TableCell className="py-3">
                               <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">

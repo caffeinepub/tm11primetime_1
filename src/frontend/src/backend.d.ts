@@ -26,6 +26,7 @@ export interface PaymentSubmissionInput {
     utr: string;
     name: string;
     phone: string;
+    amount: string;
 }
 export interface PaymentSubmission {
     id: bigint;
@@ -35,6 +36,7 @@ export interface PaymentSubmission {
     name: string;
     timestamp: bigint;
     phone: string;
+    amount: string;
 }
 export interface User {
     id: bigint;
@@ -83,6 +85,8 @@ export enum UserRole {
 export interface backendInterface {
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
+    claimFirstAdmin(): Promise<void>;
+    deleteUser(userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
@@ -91,18 +95,18 @@ export interface backendInterface {
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getMyProfile(userId: bigint): Promise<User>;
-    getMyWatchHistory(userId: bigint): Promise<Array<WatchRecord>>;
+    getMyWatchHistory(): Promise<Array<WatchRecord>>;
     getReferralTree(userId: bigint): Promise<ReferralNode>;
-    getTransactions(userId: bigint): Promise<Array<Transaction>>;
+    getTransactions(): Promise<Array<Transaction>>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
+    isAdminAssigned(): Promise<boolean>;
     isCallerAdmin(): Promise<boolean>;
-    recordWatchProgress(userId: bigint, videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
+    recordWatchProgress(videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
     register(name: string, email: string, phone: string, referredBy: string): Promise<string>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
+    updateUser(userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
     verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
-    claimFirstAdmin(): Promise<void>;
-    isAdminAssigned(): Promise<boolean>;
 }

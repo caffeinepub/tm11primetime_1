@@ -21,11 +21,13 @@ export interface PaymentSubmission {
   'name' : string,
   'timestamp' : bigint,
   'phone' : string,
+  'amount' : string,
 }
 export interface PaymentSubmissionInput {
   'utr' : string,
   'name' : string,
   'phone' : string,
+  'amount' : string,
 }
 export interface ReferralNode {
   'id' : bigint,
@@ -83,6 +85,8 @@ export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addVideo' : ActorMethod<[string, string, string, string, bigint], undefined>,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
+  'claimFirstAdmin' : ActorMethod<[], undefined>,
+  'deleteUser' : ActorMethod<[bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,
   'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getAllUsers' : ActorMethod<[], Array<User>>,
@@ -91,19 +95,21 @@ export interface _SERVICE {
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getMyPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getMyProfile' : ActorMethod<[bigint], User>,
-  'getMyWatchHistory' : ActorMethod<[bigint], Array<WatchRecord>>,
+  'getMyWatchHistory' : ActorMethod<[], Array<WatchRecord>>,
   'getReferralTree' : ActorMethod<[bigint], ReferralNode>,
-  'getTransactions' : ActorMethod<[bigint], Array<Transaction>>,
+  'getTransactions' : ActorMethod<[], Array<Transaction>>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'getVideosByCategory' : ActorMethod<[string], Array<Video>>,
+  'isAdminAssigned' : ActorMethod<[], boolean>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
-  'recordWatchProgress' : ActorMethod<
-    [bigint, bigint, bigint, boolean],
-    undefined
-  >,
+  'recordWatchProgress' : ActorMethod<[bigint, bigint, boolean], undefined>,
   'register' : ActorMethod<[string, string, string, string], string>,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'submitPaymentProof' : ActorMethod<[PaymentSubmissionInput], bigint>,
+  'updateUser' : ActorMethod<
+    [bigint, string, string, string, boolean],
+    undefined
+  >,
   'updateUserStatus' : ActorMethod<[bigint, boolean], undefined>,
   'verifyPaymentSubmission' : ActorMethod<[bigint, string], undefined>,
 }

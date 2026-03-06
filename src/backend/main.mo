@@ -4,7 +4,6 @@ import Array "mo:core/Array";
 import Time "mo:core/Time";
 import Iter "mo:core/Iter";
 import Order "mo:core/Order";
-import List "mo:core/List";
 import Runtime "mo:core/Runtime";
 import Int "mo:core/Int";
 import Text "mo:core/Text";
@@ -12,6 +11,8 @@ import Principal "mo:core/Principal";
 
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
+
+
 
 actor {
   let accessControlState = AccessControl.initState();
@@ -78,6 +79,7 @@ actor {
     name : Text;
     phone : Text;
     utr : Text;
+    amount : Text;
     timestamp : Int;
     status : PaymentStatus;
   };
@@ -92,12 +94,14 @@ actor {
     name : Text;
     phone : Text;
     utr : Text;
+    amount : Text;
   };
 
   var nextUserId = 1;
   var nextVideoId = 1;
   var nextTransactionId = 1;
   var nextPaymentSubmissionId = 1;
+  var adminAssigned = false;
 
   let users = Map.empty<Nat, User>();
   let videos = Map.empty<Nat, Video>();
@@ -144,7 +148,7 @@ actor {
       id = user.id;
       name = user.name;
       referralCode = user.referralCode;
-      children = if (level < 4) { childrenNodes } else { [] };
+      children = if (level < 14) { childrenNodes } else { [] };
     };
   };
 
@@ -153,6 +157,17 @@ actor {
   };
 
   public shared ({ caller }) func register(name : Text, email : Text, phone : Text, referredBy : Text) : async Text {
+    // Allow any authenticated user to register (anonymous users are guests and can register)
+    if (caller.isAnonymous()) {
+      Runtime.trap("Anonymous users cannot register");
+    };
+
+    // Check if user already registered
+    switch (getUserIdFromPrincipal(caller)) {
+      case (?_) { Runtime.trap("User already registered") };
+      case (null) {};
+    };
+
     let userId = nextUserId;
     nextUserId += 1;
 
@@ -199,12 +214,22 @@ actor {
       case (?id) { id };
     };
 
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    if (user.isPaid) {
+      Runtime.trap("User has already paid");
+    };
+
     let submission : PaymentSubmission = {
       id = nextPaymentSubmissionId;
       userId;
       name = input.name;
       phone = input.phone;
       utr = input.utr;
+      amount = input.amount;
       timestamp = Time.now();
       status = #pending;
     };
@@ -404,60 +429,62 @@ actor {
     videos.values().toArray().filter(func(v) { Text.equal(v.category, category) });
   };
 
-  public shared ({ caller }) func recordWatchProgress(userId : Nat, videoId : Nat, watchedSeconds : Nat, subscribed : Bool) : async () {
+  public shared ({ caller }) func recordWatchProgress(videoId : Nat, watchedSeconds : Nat, subscribed : Bool) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can record watch progress");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
+    let userId = switch (getUserIdFromPrincipal(caller)) {
       case (null) { Runtime.trap("Caller not registered") };
       case (?id) { id };
     };
 
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only record your own watch progress");
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    if (not user.isPaid) {
+      Runtime.trap("Unauthorized: Only paid members can watch videos");
+    };
+
+    let video = switch (videos.get(videoId)) {
+      case (null) { Runtime.trap("Video not found") };
+      case (?v) { v };
     };
 
     let record : WatchRecord = {
       userId;
       videoId;
       watchedSeconds;
-      completed = watchedSeconds >= 60;
+      completed = watchedSeconds >= video.duration;
       subscribed;
     };
     let watchRecordId = userId * 100000 + videoId;
     watchRecords.add(watchRecordId, record);
   };
 
-  public query ({ caller }) func getMyWatchHistory(userId : Nat) : async [WatchRecord] {
+  public query ({ caller }) func getMyWatchHistory() : async [WatchRecord] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view watch history");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
+    let userId = switch (getUserIdFromPrincipal(caller)) {
       case (null) { Runtime.trap("Caller not registered") };
       case (?id) { id };
-    };
-
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own watch history");
     };
 
     watchRecords.values().toArray().filter(func(w) { w.userId == userId });
   };
 
-  public query ({ caller }) func getTransactions(userId : Nat) : async [Transaction] {
+  public query ({ caller }) func getTransactions() : async [Transaction] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view transactions");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
+    let userId = switch (getUserIdFromPrincipal(caller)) {
       case (null) { Runtime.trap("Caller not registered") };
       case (?id) { id };
-    };
-
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own transactions");
     };
 
     transactions.values().toArray().filter(func(t) { t.userId == userId }).sort();
@@ -505,6 +532,55 @@ actor {
     users.add(userId, updatedUser);
   };
 
+  public shared ({ caller }) func updateUser(userId : Nat, name : Text, email : Text, phone : Text, isActive : Bool) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can perform this action");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    let updatedUser = { user with name; email; phone; isActive };
+    users.add(userId, updatedUser);
+  };
+
+  public shared ({ caller }) func deleteUser(userId : Nat) : async () {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can perform this action");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    // Remove user from users map
+    users.remove(userId);
+
+    // Remove from principalToUserId map
+    for ((principal, uid) in principalToUserId.entries()) {
+      if (uid == userId) {
+        principalToUserId.remove(principal);
+      };
+    };
+
+    // Remove from userProfiles map
+    for ((principal, profile) in userProfiles.entries()) {
+      if (profile.userId == userId) {
+        userProfiles.remove(principal);
+      };
+    };
+
+    // Remove all payment submissions for this user
+    for ((id, submission) in paymentSubmissions.entries()) {
+      if (submission.userId == userId) {
+        paymentSubmissions.remove(id);
+      };
+    };
+  };
+
   public shared ({ caller }) func addVideo(title : Text, category : Text, url : Text, description : Text, duration : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -538,20 +614,18 @@ actor {
     videos.remove(videoId);
   };
 
-  // Allows the first authenticated caller to claim admin when no admin exists yet.
   public shared ({ caller }) func claimFirstAdmin() : async () {
     if (caller.isAnonymous()) {
       Runtime.trap("Must be authenticated to claim admin");
     };
-    if (accessControlState.adminAssigned) {
+    if (adminAssigned) {
       Runtime.trap("An admin has already been assigned");
     };
     accessControlState.userRoles.add(caller, #admin);
-    accessControlState.adminAssigned := true;
+    adminAssigned := true;
   };
 
-  // Returns whether any admin has been assigned yet.
   public query func isAdminAssigned() : async Bool {
-    accessControlState.adminAssigned;
+    adminAssigned;
   };
 };

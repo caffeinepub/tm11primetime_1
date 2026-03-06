@@ -27,6 +27,7 @@ export const PaymentSubmission = IDL.Record({
   'name' : IDL.Text,
   'timestamp' : IDL.Int,
   'phone' : IDL.Text,
+  'amount' : IDL.Text,
 });
 export const User = IDL.Record({
   'id' : IDL.Nat,
@@ -83,6 +84,7 @@ export const PaymentSubmissionInput = IDL.Record({
   'utr' : IDL.Text,
   'name' : IDL.Text,
   'phone' : IDL.Text,
+  'amount' : IDL.Text,
 });
 
 export const idlService = IDL.Service({
@@ -93,6 +95,8 @@ export const idlService = IDL.Service({
       [],
     ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+  'claimFirstAdmin' : IDL.Func([], [], []),
+  'deleteUser' : IDL.Func([IDL.Nat], [], []),
   'deleteVideo' : IDL.Func([IDL.Nat], [], []),
   'getAllPaymentSubmissions' : IDL.Func(
       [],
@@ -109,21 +113,18 @@ export const idlService = IDL.Service({
       ['query'],
     ),
   'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
-  'getMyWatchHistory' : IDL.Func([IDL.Nat], [IDL.Vec(WatchRecord)], ['query']),
+  'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
   'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
-  'getTransactions' : IDL.Func([IDL.Nat], [IDL.Vec(Transaction)], ['query']),
+  'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
   'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
+  'isAdminAssigned' : IDL.Func([], [IDL.Bool], ['query']),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-  'recordWatchProgress' : IDL.Func(
-      [IDL.Nat, IDL.Nat, IDL.Nat, IDL.Bool],
-      [],
-      [],
-    ),
+  'recordWatchProgress' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool], [], []),
   'register' : IDL.Func(
       [IDL.Text, IDL.Text, IDL.Text, IDL.Text],
       [IDL.Text],
@@ -131,6 +132,11 @@ export const idlService = IDL.Service({
     ),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
+  'updateUser' : IDL.Func(
+      [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+      [],
+      [],
+    ),
   'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
   'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
 });
@@ -157,6 +163,7 @@ export const idlFactory = ({ IDL }) => {
     'name' : IDL.Text,
     'timestamp' : IDL.Int,
     'phone' : IDL.Text,
+    'amount' : IDL.Text,
   });
   const User = IDL.Record({
     'id' : IDL.Nat,
@@ -213,6 +220,7 @@ export const idlFactory = ({ IDL }) => {
     'utr' : IDL.Text,
     'name' : IDL.Text,
     'phone' : IDL.Text,
+    'amount' : IDL.Text,
   });
   
   return IDL.Service({
@@ -223,6 +231,8 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
+    'claimFirstAdmin' : IDL.Func([], [], []),
+    'deleteUser' : IDL.Func([IDL.Nat], [], []),
     'deleteVideo' : IDL.Func([IDL.Nat], [], []),
     'getAllPaymentSubmissions' : IDL.Func(
         [],
@@ -239,25 +249,18 @@ export const idlFactory = ({ IDL }) => {
         ['query'],
       ),
     'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
-    'getMyWatchHistory' : IDL.Func(
-        [IDL.Nat],
-        [IDL.Vec(WatchRecord)],
-        ['query'],
-      ),
+    'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
     'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
-    'getTransactions' : IDL.Func([IDL.Nat], [IDL.Vec(Transaction)], ['query']),
+    'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
     'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
+    'isAdminAssigned' : IDL.Func([], [IDL.Bool], ['query']),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-    'recordWatchProgress' : IDL.Func(
-        [IDL.Nat, IDL.Nat, IDL.Nat, IDL.Bool],
-        [],
-        [],
-      ),
+    'recordWatchProgress' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool], [], []),
     'register' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Text],
         [IDL.Text],
@@ -265,6 +268,11 @@ export const idlFactory = ({ IDL }) => {
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
+    'updateUser' : IDL.Func(
+        [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+        [],
+        [],
+      ),
     'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
     'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
   });

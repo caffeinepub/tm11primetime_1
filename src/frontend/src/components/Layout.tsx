@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Link, useLocation } from "@tanstack/react-router";
 import {
   ChevronRight,
+  CreditCard,
   Crown,
   LayoutDashboard,
   LogOut,
@@ -26,6 +27,7 @@ const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Videos", href: "/videos", icon: PlayCircle },
   { label: "Wallet", href: "/wallet", icon: Wallet },
+  { label: "Payment", href: "/register", icon: CreditCard },
   { label: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },
 ];
 
