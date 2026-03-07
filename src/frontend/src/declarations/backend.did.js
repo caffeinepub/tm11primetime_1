@@ -94,18 +94,32 @@ export const idlService = IDL.Service({
       [],
       [],
     ),
+  'addVideoWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [],
+      [],
+    ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
   'claimFirstAdmin' : IDL.Func([], [], []),
   'deleteUser' : IDL.Func([IDL.Nat], [], []),
+  'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+  'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
   'getAllPaymentSubmissions' : IDL.Func(
       [],
       [IDL.Vec(PaymentSubmission)],
       ['query'],
     ),
+  'getAllPaymentSubmissionsWithPassword' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(PaymentSubmission)],
+      ['query'],
+    ),
   'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
+  'getAllUsersWithPassword' : IDL.Func([IDL.Text], [IDL.Vec(User)], ['query']),
   'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
+  'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getMyPaymentSubmissions' : IDL.Func(
@@ -152,7 +166,22 @@ export const idlService = IDL.Service({
       [],
     ),
   'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
+  'updateUserStatusWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Bool],
+      [],
+      [],
+    ),
+  'updateUserWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+      [],
+      [],
+    ),
   'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+  'verifyPaymentSubmissionWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text],
+      [],
+      [],
+    ),
 });
 
 export const idlInitArgs = [];
@@ -244,18 +273,36 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'addVideoWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [],
+        [],
+      ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
     'claimFirstAdmin' : IDL.Func([], [], []),
     'deleteUser' : IDL.Func([IDL.Nat], [], []),
+    'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+    'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
     'getAllPaymentSubmissions' : IDL.Func(
         [],
         [IDL.Vec(PaymentSubmission)],
         ['query'],
       ),
+    'getAllPaymentSubmissionsWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(PaymentSubmission)],
+        ['query'],
+      ),
     'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
+    'getAllUsersWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(User)],
+        ['query'],
+      ),
     'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
+    'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getMyPaymentSubmissions' : IDL.Func(
@@ -302,7 +349,22 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
+    'updateUserStatusWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Bool],
+        [],
+        [],
+      ),
+    'updateUserWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+        [],
+        [],
+      ),
     'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
+    'verifyPaymentSubmissionWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text],
+        [],
+        [],
+      ),
   });
 };
 

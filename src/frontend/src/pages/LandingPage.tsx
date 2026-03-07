@@ -80,11 +80,19 @@ export default function LandingPage() {
       setLoginLoading(true);
       setLoginError(null);
 
-      // Use the public getUserByPhone -- no admin access needed
-      const match = await actor.getUserByPhone(trimmed);
+      let match: import("../backend.d").User | null = null;
+
+      try {
+        // Try to look up user by phone -- may fail with "Unauthorized" if backend requires auth
+        match = await actor.getUserByPhone(trimmed);
+      } catch {
+        // If getUserByPhone fails (e.g. Unauthorized), treat as new/unknown user → go to register
+        navigate({ to: "/register" });
+        return;
+      }
 
       if (!match) {
-        // New user → go register
+        // No user found → new user, go register
         navigate({ to: "/register" });
         return;
       }

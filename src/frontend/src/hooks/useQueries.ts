@@ -145,7 +145,7 @@ export function useAllUsers(isAdminReady = false) {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getAllUsers();
+        return await actor.getAllUsersWithPassword("aakbn@1014");
       } catch {
         return [];
       }
@@ -174,7 +174,7 @@ export function useAllPaymentSubmissions(isAdminReady = false) {
     queryFn: async () => {
       if (!actor) return [];
       try {
-        return await actor.getAllPaymentSubmissions();
+        return await actor.getAllPaymentSubmissionsWithPassword("aakbn@1014");
       } catch {
         return [];
       }
@@ -297,7 +297,11 @@ export function useVerifyPaymentSubmissionMutation() {
       action: string;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.verifyPaymentSubmission(submissionId, action);
+      await actor.verifyPaymentSubmissionWithPassword(
+        "aakbn@1014",
+        submissionId,
+        action,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allPaymentSubmissions"] });
@@ -344,7 +348,7 @@ export function useUpdateUserStatusMutation() {
       isActive: boolean;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.updateUserStatus(userId, isActive);
+      await actor.updateUserStatusWithPassword("aakbn@1014", userId, isActive);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
@@ -370,10 +374,18 @@ export function useAddVideoMutation() {
       duration: bigint;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.addVideo(title, category, url, description, duration);
+      await actor.addVideoWithPassword(
+        "aakbn@1014",
+        title,
+        category,
+        url,
+        description,
+        duration,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allVideos"] });
+      queryClient.invalidateQueries({ queryKey: ["allVideosPublic"] });
     },
   });
 }
@@ -384,10 +396,11 @@ export function useDeleteVideoMutation() {
   return useMutation({
     mutationFn: async (videoId: bigint) => {
       if (!actor) throw new Error("Not connected");
-      await actor.deleteVideo(videoId);
+      await actor.deleteVideoWithPassword("aakbn@1014", videoId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allVideos"] });
+      queryClient.invalidateQueries({ queryKey: ["allVideosPublic"] });
     },
   });
 }
@@ -410,7 +423,14 @@ export function useUpdateUserMutation() {
       isActive: boolean;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.updateUser(userId, name, email, phone, isActive);
+      await actor.updateUserWithPassword(
+        "aakbn@1014",
+        userId,
+        name,
+        email,
+        phone,
+        isActive,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
@@ -424,11 +444,23 @@ export function useDeleteUserMutation() {
   return useMutation({
     mutationFn: async (userId: bigint) => {
       if (!actor) throw new Error("Not connected");
-      await actor.deleteUser(userId);
+      await actor.deleteUserWithPassword("aakbn@1014", userId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allUsers"] });
     },
+  });
+}
+
+export function useAllVideosPublic() {
+  const { actor, isFetching } = useActor();
+  return useQuery<Video[]>({
+    queryKey: ["allVideosPublic"],
+    queryFn: async () => {
+      if (!actor) return [];
+      return actor.getAllVideosPublic();
+    },
+    enabled: !!actor && !isFetching,
   });
 }
 

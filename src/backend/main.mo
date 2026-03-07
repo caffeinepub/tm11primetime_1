@@ -10,15 +10,15 @@ import Text "mo:core/Text";
 import Principal "mo:core/Principal";
 import Char "mo:core/Char";
 
-
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
-
-// Apply migration on upgrade
 
 actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
+
+  // Admin password constant
+  let ADMIN_PASSWORD = "aakbn@1014";
 
   type User = {
     id : Nat;
@@ -170,6 +170,11 @@ actor {
     principalToUserId.get(caller);
   };
 
+  // Helper function to verify password
+  func verifyPassword(password : Text) : Bool {
+    Text.equal(password, ADMIN_PASSWORD);
+  };
+
   // New function: Get referral tree by code (no authentication required as specified)
   public query func getReferralTreeByCode(referralCode : Text) : async {
     id : Nat;
@@ -196,6 +201,11 @@ actor {
         buildReferralTree(u.id, 0);
       };
     };
+  };
+
+  // PUBLIC query function - no authentication required (for admin panel)
+  public query func getAllVideosPublic() : async [Video] {
+    videos.values().toArray();
   };
 
   // USER-ONLY function - requires authentication to protect PII
@@ -749,5 +759,221 @@ actor {
     adminAssigned := true;
     accessControlState.adminAssigned := true;
     "OK";
+  };
+
+  // ========== PASSWORD-GATED ADMIN FUNCTIONS ==========
+  // These functions allow password-based access for admin panel (including anonymous callers)
+
+  // PASSWORD-GATED function - returns all users if password is correct
+  public query func getAllUsersWithPassword(password : Text) : async [User] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+    users.values().toArray();
+  };
+
+  // PASSWORD-GATED function - returns all payment submissions if password is correct
+  public query func getAllPaymentSubmissionsWithPassword(password : Text) : async [PaymentSubmission] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+    paymentSubmissions.values().toArray().sort();
+  };
+
+  // PASSWORD-GATED function - verifies payment submission with password authentication
+  public shared func verifyPaymentSubmissionWithPassword(password : Text, submissionId : Nat, action : Text) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let submission = switch (paymentSubmissions.get(submissionId)) {
+      case (null) { Runtime.trap("Payment submission not found") };
+      case (?s) { s };
+    };
+
+    switch (action) {
+      case ("approve") {
+        // Look up user: first try by userId, then by phone if userId is 0
+        var userOpt : ?User = users.get(submission.userId);
+
+        if (submission.userId == 0 or userOpt == null) {
+          let normalizedPhone = normalizePhone(submission.phone);
+          userOpt := users.values().toArray().find(
+            func(u) {
+              Text.equal(normalizePhone(u.phone), normalizedPhone);
+            }
+          );
+        };
+
+        let user = switch (userOpt) {
+          case (null) { Runtime.trap("User not found for this payment") };
+          case (?u) { u };
+        };
+
+        if (user.isPaid) {
+          Runtime.trap("User already paid");
+        };
+
+        let updatedUser = { user with isPaid = true; walletBalance = user.walletBalance + 15000 };
+        users.add(user.id, updatedUser);
+
+        let updatedSubmission = { submission with status = #approved; userId = user.id };
+        paymentSubmissions.add(submissionId, updatedSubmission);
+
+        let bonusTxn : Transaction = {
+          id = nextTransactionId;
+          userId = user.id;
+          amount = 15000;
+          txType = "joining_bonus";
+          note = "Joining bonus";
+          timestamp = Time.now();
+        };
+        transactions.add(nextTransactionId, bonusTxn);
+        nextTransactionId += 1;
+
+        var currentReferralCode = user.referredBy;
+        var level = 1;
+        let levelEarnings = [1000, 500, 400, 300, 200, 100, 50, 25, 25, 25, 25, 25, 25, 25, 25];
+
+        while (level <= 15 and not Text.equal(currentReferralCode, "")) {
+          let referrerOpt = users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) });
+
+          switch (referrerOpt) {
+            case (null) { level := 16 };
+            case (?referrer) {
+              let referralCount = findReferrals(referrer.referralCode).size();
+
+              if (referrer.isPaid and referralCount >= 3) {
+                let earning = levelEarnings[level - 1];
+                let updatedReferrer = { referrer with walletBalance = referrer.walletBalance + earning };
+                users.add(referrer.id, updatedReferrer);
+
+                let earnTxn : Transaction = {
+                  id = nextTransactionId;
+                  userId = referrer.id;
+                  amount = earning;
+                  txType = "level_earning";
+                  note = "Level " # level.toText() # " earning from user " # user.id.toText();
+                  timestamp = Time.now();
+                };
+                transactions.add(nextTransactionId, earnTxn);
+                nextTransactionId += 1;
+              };
+
+              currentReferralCode := referrer.referredBy;
+              level += 1;
+            };
+          };
+        };
+      };
+      case ("reject") {
+        let updatedSubmission = { submission with status = #rejected };
+        paymentSubmissions.add(submissionId, updatedSubmission);
+      };
+      case (_) {
+        Runtime.trap("Invalid action");
+      };
+    };
+  };
+
+  // PASSWORD-GATED function - updates user with password authentication
+  public shared func updateUserWithPassword(password : Text, userId : Nat, name : Text, email : Text, phone : Text, isActive : Bool) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    let updatedUser = { user with name; email; phone; isActive };
+    users.add(userId, updatedUser);
+  };
+
+  // PASSWORD-GATED function - deletes user with password authentication
+  public shared func deleteUserWithPassword(password : Text, userId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    // Remove user from users map
+    users.remove(userId);
+
+    // Remove from principalToUserId map
+    for ((principal, uid) in principalToUserId.entries()) {
+      if (uid == userId) {
+        principalToUserId.remove(principal);
+      };
+    };
+
+    // Remove from userProfiles map
+    for ((principal, profile) in userProfiles.entries()) {
+      if (profile.userId == userId) {
+        userProfiles.remove(principal);
+      };
+    };
+
+    // Remove all payment submissions for this user
+    for ((id, submission) in paymentSubmissions.entries()) {
+      if (submission.userId == userId) {
+        paymentSubmissions.remove(id);
+      };
+    };
+  };
+
+  // PASSWORD-GATED function - adds video with password authentication
+  public shared func addVideoWithPassword(password : Text, title : Text, category : Text, url : Text, description : Text, duration : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let videoId = nextVideoId;
+    nextVideoId += 1;
+
+    let video : Video = {
+      id = videoId;
+      title;
+      category;
+      url;
+      description;
+      duration;
+      createdAt = Time.now();
+    };
+
+    videos.add(videoId, video);
+  };
+
+  // PASSWORD-GATED function - deletes video with password authentication
+  public shared func deleteVideoWithPassword(password : Text, videoId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    if (not videos.containsKey(videoId)) {
+      Runtime.trap("Video not found");
+    };
+
+    videos.remove(videoId);
+  };
+
+  // PASSWORD-GATED function - updates user status with password authentication
+  public shared func updateUserStatusWithPassword(password : Text, userId : Nat, isActive : Bool) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    let updatedUser = { user with isActive };
+    users.add(userId, updatedUser);
   };
 };

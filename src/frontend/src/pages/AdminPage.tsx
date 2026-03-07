@@ -47,6 +47,7 @@ import {
   BarChart3,
   CheckCircle,
   Loader2,
+  Lock,
   LogOut,
   Pencil,
   PlayCircle,
@@ -62,22 +63,24 @@ import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../backend.d";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAddVideoMutation,
   useAllPaymentSubmissions,
   useAllUsers,
-  useAllVideos,
-  useClaimFirstAdminMutation,
+  useAllVideosPublic,
   useDeleteUserMutation,
   useDeleteVideoMutation,
-  useForceSetAdminMutation,
-  useIsAdmin,
-  useIsAdminAssigned,
   useUpdateUserMutation,
   useUpdateUserStatusMutation,
   useVerifyPaymentSubmissionMutation,
 } from "../hooks/useQueries";
+
+// ── Admin Password ────────────────────────────────────────────────────────────
+
+const ADMIN_PASSWORD = "aakbn@1014";
+const ADMIN_SESSION_KEY = "admin_logged_in";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 const VIDEO_CATEGORIES = [
   "Tutorial",
@@ -104,28 +107,58 @@ const initialFormData: AddVideoFormData = {
   duration: "",
 };
 
-// ── Login Screen ─────────────────────────────────────────────────────────────
+// ── Admin Login Screen ────────────────────────────────────────────────────────
 
-function AdminLoginScreen() {
-  const { login, isLoggingIn, isInitializing } = useInternetIdentity();
+interface AdminLoginScreenProps {
+  onLogin: () => void;
+}
+
+function AdminLoginScreen({ onLogin }: AdminLoginScreenProps) {
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleLogin = () => {
+    if (!password.trim()) {
+      setError("Please enter your admin password.");
+      return;
+    }
+    setLoading(true);
+    setError(null);
+
+    // Brief delay for UX feedback
+    setTimeout(() => {
+      if (password === ADMIN_PASSWORD) {
+        localStorage.setItem(ADMIN_SESSION_KEY, "true");
+        onLogin();
+      } else {
+        setError("Incorrect password. Please try again.");
+        setLoading(false);
+      }
+    }, 400);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleLogin();
+  };
 
   return (
-    <div className="min-h-[70vh] flex items-center justify-center p-6">
+    <div className="min-h-[80vh] flex items-center justify-center p-6">
       <motion.div
-        initial={{ opacity: 0, y: 24 }}
+        initial={{ opacity: 0, y: 28 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
         className="w-full max-w-sm"
         data-ocid="admin.login.panel"
       >
         {/* Icon */}
-        <div className="flex justify-center mb-6">
+        <div className="flex justify-center mb-7">
           <div className="relative">
             <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/10">
               <Shield className="w-9 h-9 text-primary" />
             </div>
-            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
-              <span className="text-xs font-bold text-black">A</span>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center shadow-md">
+              <Lock className="w-3 h-3 text-black" />
             </div>
           </div>
         </div>
@@ -133,177 +166,63 @@ function AdminLoginScreen() {
         {/* Title */}
         <div className="text-center mb-8">
           <h1 className="font-display font-black text-2xl text-foreground mb-2">
-            Admin <span className="text-gradient-gold">Access</span>
+            Admin <span className="text-gradient-gold">Login</span>
           </h1>
           <p className="text-muted-foreground text-sm font-body leading-relaxed">
-            Sign in with Internet Identity to access the admin panel. Only
-            authorized admins can view this section.
+            Enter your admin password to access the control panel.
           </p>
         </div>
 
         {/* Login Card */}
         <Card className="card-premium border border-primary/15">
           <CardContent className="p-6 space-y-5">
+            {error && (
+              <Alert variant="destructive" data-ocid="admin.login.error_state">
+                <AlertCircle className="w-4 h-4" />
+                <AlertDescription className="font-body text-sm">
+                  {error}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="adminPassword"
+                className="font-ui text-sm text-muted-foreground"
+              >
+                Admin Password
+              </Label>
+              <Input
+                id="adminPassword"
+                type="password"
+                value={password}
+                onChange={(e) => {
+                  setPassword(e.target.value);
+                  setError(null);
+                }}
+                onKeyDown={handleKeyDown}
+                placeholder="Enter admin password"
+                className="bg-input border-border font-body text-sm"
+                autoFocus
+                data-ocid="admin.login.input"
+              />
+            </div>
+
             <Button
               className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90 transition-opacity"
-              onClick={login}
-              disabled={isLoggingIn || isInitializing}
+              onClick={handleLogin}
+              disabled={loading}
               data-ocid="admin.login.primary_button"
             >
-              {isLoggingIn ? (
+              {loading ? (
                 <Loader2 className="w-5 h-5 mr-2 animate-spin" />
               ) : (
                 <Shield className="w-5 h-5 mr-2" />
               )}
-              {isLoggingIn
-                ? "Opening Identity..."
-                : "Login with Internet Identity"}
-            </Button>
-
-            <div className="rounded-lg bg-muted/30 border border-border p-3">
-              <p className="text-xs text-muted-foreground font-body leading-relaxed">
-                <span className="font-semibold text-foreground/70">Tip:</span>{" "}
-                Open this app from your Caffeine dashboard to auto-configure
-                admin access with your token.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-    </div>
-  );
-}
-
-// ── Not Admin Screen ──────────────────────────────────────────────────────────
-
-interface NotAdminScreenProps {
-  isAdminAssigned: boolean;
-  onClaimAdmin: () => void;
-  isClaiming: boolean;
-  onLogout: () => void;
-  principal: string;
-  onForceSetAdmin: (principal: string) => void;
-  isForceSetting: boolean;
-}
-
-function NotAdminScreen({
-  isAdminAssigned,
-  onClaimAdmin,
-  isClaiming,
-  onLogout,
-  principal,
-  onForceSetAdmin,
-  isForceSetting,
-}: NotAdminScreenProps) {
-  return (
-    <div className="min-h-[70vh] flex items-center justify-center p-6">
-      <motion.div
-        initial={{ opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        className="w-full max-w-sm space-y-4"
-        data-ocid="admin.notadmin.panel"
-      >
-        <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-            <Shield className="w-9 h-9 text-amber-400" />
-          </div>
-        </div>
-
-        <Card className="card-premium border border-amber-500/15">
-          <CardContent className="p-6 space-y-5">
-            <div className="text-center">
-              <h2 className="font-display font-bold text-xl text-foreground mb-1">
-                {isAdminAssigned ? "Access Denied" : "First-Time Setup"}
-              </h2>
-              <p className="text-muted-foreground text-sm font-body">
-                {isAdminAssigned
-                  ? "This account does not have admin access."
-                  : "No admin has been assigned yet. Claim admin rights for your account."}
-              </p>
-            </div>
-
-            <div className="rounded-lg bg-muted/20 border border-border p-3 break-all">
-              <p className="text-xs text-muted-foreground font-body">
-                <span className="font-semibold text-foreground/60">
-                  Principal:
-                </span>{" "}
-                <span className="font-mono text-xs">{principal}</span>
-              </p>
-            </div>
-
-            {!isAdminAssigned && (
-              <Button
-                className="w-full bg-primary text-primary-foreground font-ui py-5 hover:opacity-90"
-                onClick={onClaimAdmin}
-                disabled={isClaiming}
-                data-ocid="admin.claim.primary_button"
-              >
-                {isClaiming ? (
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                ) : (
-                  <Shield className="w-5 h-5 mr-2" />
-                )}
-                {isClaiming ? "Claiming..." : "Become Admin"}
-              </Button>
-            )}
-
-            <Button
-              variant="outline"
-              className="w-full border-border font-ui text-muted-foreground hover:text-foreground"
-              onClick={onLogout}
-              data-ocid="admin.notadmin.logout.button"
-            >
-              <LogOut className="w-4 h-4 mr-2" />
-              Log Out
+              {loading ? "Verifying..." : "Login"}
             </Button>
           </CardContent>
         </Card>
-
-        {isAdminAssigned && (
-          <Card
-            className="card-premium border border-amber-500/30 bg-amber-500/5"
-            data-ocid="admin.recovery.panel"
-          >
-            <CardContent className="p-6 space-y-4">
-              <div>
-                <h3 className="font-display font-bold text-base text-amber-400 mb-1">
-                  Admin Recovery
-                </h3>
-                <p className="text-muted-foreground text-xs font-body leading-relaxed">
-                  If you are the app owner, you can forcefully claim admin
-                  access using your current Internet Identity principal.
-                </p>
-              </div>
-
-              <div className="space-y-1.5">
-                <Label className="font-ui text-xs text-muted-foreground">
-                  Your Principal
-                </Label>
-                <Input
-                  readOnly
-                  value={principal}
-                  className="bg-input border-border font-mono text-xs text-foreground/80 select-all"
-                  onClick={(e) => (e.target as HTMLInputElement).select()}
-                />
-              </div>
-
-              <Button
-                className="w-full bg-amber-500 hover:bg-amber-600 text-black font-ui font-semibold py-5 transition-colors"
-                onClick={() => onForceSetAdmin(principal)}
-                disabled={isForceSetting}
-                data-ocid="admin.recovery.primary_button"
-              >
-                {isForceSetting ? (
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                ) : (
-                  <Shield className="w-5 h-5 mr-2" />
-                )}
-                {isForceSetting ? "Claiming..." : "Claim Admin (Force)"}
-              </Button>
-            </CardContent>
-          </Card>
-        )}
       </motion.div>
     </div>
   );
@@ -312,29 +231,34 @@ function NotAdminScreen({
 // ── Main Admin Panel ──────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const { identity, clear, isInitializing, isLoggingIn } =
-    useInternetIdentity();
-  const isLoggedIn = !!identity;
+  // Simple local password auth -- no blockchain dependency
+  const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
+    return localStorage.getItem(ADMIN_SESSION_KEY) === "true";
+  });
 
-  const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
-  const { data: isAdminAssigned } = useIsAdminAssigned();
-  const claimFirstAdminMutation = useClaimFirstAdminMutation();
-  const forceSetAdminMutation = useForceSetAdminMutation();
+  const handleLogin = () => {
+    setIsAdminLoggedIn(true);
+  };
 
-  // Only enable admin-only backend queries when confirmed admin on blockchain
-  const isAdminReady = isAdmin === true;
+  const handleLogout = () => {
+    localStorage.removeItem(ADMIN_SESSION_KEY);
+    setIsAdminLoggedIn(false);
+  };
 
+  // Admin data queries -- enabled only when logged in
   const {
     data: users,
     isLoading: usersLoading,
     refetch: refetchUsers,
-  } = useAllUsers(isAdminReady);
-  const { data: videos, isLoading: videosLoading } = useAllVideos();
+  } = useAllUsers(isAdminLoggedIn);
+
+  const { data: videos, isLoading: videosLoading } = useAllVideosPublic();
+
   const {
     data: paymentSubmissions,
     isLoading: paymentsLoading,
     refetch: refetchPayments,
-  } = useAllPaymentSubmissions(isAdminReady);
+  } = useAllPaymentSubmissions(isAdminLoggedIn);
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
   const updateUserMutation = useUpdateUserMutation();
@@ -360,6 +284,14 @@ export default function AdminPage() {
   // Delete user dialog state
   const [deleteUserId, setDeleteUserId] = useState<bigint | null>(null);
   const [deleteUserName, setDeleteUserName] = useState("");
+
+  // ── Show login if not authenticated ──────────────────────────────────────
+
+  if (!isAdminLoggedIn) {
+    return <AdminLoginScreen onLogin={handleLogin} />;
+  }
+
+  // ── Handlers ──────────────────────────────────────────────────────────────
 
   const handleVideoFormChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>,
@@ -471,84 +403,16 @@ export default function AdminPage() {
     }
   };
 
-  const handleClaimAdmin = async () => {
-    try {
-      await claimFirstAdminMutation.mutateAsync();
-      toast.success("Admin access granted! Welcome.");
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : "Failed to claim admin";
-      toast.error(msg);
-    }
-  };
+  // ── Summary stats ─────────────────────────────────────────────────────────
 
-  // ── Loading state while auth initializes ──────────────────────────────────
-  if (isInitializing || isLoggingIn) {
-    return (
-      <div className="p-6 space-y-4" data-ocid="admin.loading_state">
-        <div className="flex items-center gap-3">
-          <Skeleton className="w-10 h-10 rounded-xl" />
-          <div className="space-y-1.5">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-3.5 w-48" />
-          </div>
-        </div>
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
-
-  // ── Not logged in ─────────────────────────────────────────────────────────
-  if (!isLoggedIn) {
-    return <AdminLoginScreen />;
-  }
-
-  // ── Checking admin status ─────────────────────────────────────────────────
-  if (adminLoading) {
-    return (
-      <div className="p-6 space-y-4" data-ocid="admin.loading_state">
-        <div className="flex items-center gap-3">
-          <Skeleton className="w-10 h-10 rounded-xl" />
-          <div className="space-y-1.5">
-            <Skeleton className="h-5 w-32" />
-            <Skeleton className="h-3.5 w-48" />
-          </div>
-        </div>
-        <Skeleton className="h-64 rounded-xl" />
-      </div>
-    );
-  }
-
-  // ── Logged in but not admin ───────────────────────────────────────────────
-  if (!isAdmin) {
-    return (
-      <NotAdminScreen
-        isAdminAssigned={isAdminAssigned === true}
-        onClaimAdmin={handleClaimAdmin}
-        isClaiming={claimFirstAdminMutation.isPending}
-        onLogout={clear}
-        principal={identity.getPrincipal().toString()}
-        onForceSetAdmin={async (principal) => {
-          try {
-            await forceSetAdminMutation.mutateAsync(principal);
-            toast.success("Admin access granted! You are now the admin.");
-          } catch (err) {
-            const msg =
-              err instanceof Error ? err.message : "Failed to set admin";
-            toast.error(msg);
-          }
-        }}
-        isForceSetting={forceSetAdminMutation.isPending}
-      />
-    );
-  }
-
-  // ── Full admin panel ──────────────────────────────────────────────────────
   const totalUsers = users?.length ?? 0;
   const paidUsers = users?.filter((u) => u.isPaid).length ?? 0;
   const activeUsers = users?.filter((u) => u.isActive).length ?? 0;
   const pendingPayments =
     paymentSubmissions?.filter((p) => String(p.status) === "pending").length ??
     0;
+
+  // ── Full admin panel ──────────────────────────────────────────────────────
 
   return (
     <AnimatePresence mode="wait">
@@ -588,9 +452,9 @@ export default function AdminPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={clear}
+              onClick={handleLogout}
               className="border-border font-ui text-muted-foreground hover:text-foreground"
-              data-ocid="admin.header.logout.button"
+              data-ocid="admin.header.button"
             >
               <LogOut className="w-4 h-4 mr-1.5" />
               Log Out
@@ -642,10 +506,28 @@ export default function AdminPage() {
           {/* ── USERS TAB ── */}
           <TabsContent value="users">
             <Card className="card-premium">
-              <CardHeader className="pb-3">
+              <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
                 <CardTitle className="font-display font-bold text-lg text-foreground">
                   All Users
                 </CardTitle>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-border font-ui text-xs flex-shrink-0"
+                  onClick={() => {
+                    void refetchUsers();
+                    toast.success("Refreshed user data");
+                  }}
+                  disabled={usersLoading}
+                  data-ocid="admin.users.secondary_button"
+                >
+                  {usersLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  Refresh
+                </Button>
               </CardHeader>
               <CardContent className="p-0">
                 {usersLoading ? (
@@ -665,6 +547,9 @@ export default function AdminPage() {
                     <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
                     <p className="text-muted-foreground font-body text-sm">
                       No users registered yet
+                    </p>
+                    <p className="text-muted-foreground font-body text-xs mt-1 opacity-70">
+                      If you expect users here, click Refresh above.
                     </p>
                   </div>
                 ) : (
@@ -960,7 +845,7 @@ export default function AdminPage() {
                     toast.success("Refreshed payment data");
                   }}
                   disabled={paymentsLoading}
-                  data-ocid="admin.payments.refresh.button"
+                  data-ocid="admin.payments.secondary_button"
                 >
                   {paymentsLoading ? (
                     <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
@@ -987,7 +872,10 @@ export default function AdminPage() {
                   >
                     <Receipt className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
                     <p className="text-muted-foreground font-body text-sm">
-                      No payment submissions yet. Click Refresh to reload.
+                      No payment submissions yet.
+                    </p>
+                    <p className="text-muted-foreground font-body text-xs mt-1 opacity-70">
+                      Click Refresh to reload the latest submissions.
                     </p>
                   </div>
                 ) : (
@@ -1290,7 +1178,7 @@ export default function AdminPage() {
                         variant="outline"
                         onClick={() => setAddVideoOpen(false)}
                         className="border-border font-ui"
-                        data-ocid="admin.videos.cancel.button"
+                        data-ocid="admin.videos.cancel_button"
                       >
                         Cancel
                       </Button>
@@ -1298,7 +1186,7 @@ export default function AdminPage() {
                         onClick={handleAddVideo}
                         disabled={addVideoMutation.isPending}
                         className="bg-primary text-primary-foreground font-ui"
-                        data-ocid="admin.videos.submit.button"
+                        data-ocid="admin.videos.submit_button"
                       >
                         {addVideoMutation.isPending ? (
                           <Loader2 className="mr-2 w-4 h-4 animate-spin" />
@@ -1476,10 +1364,7 @@ export default function AdminPage() {
                     {[
                       { label: "Total Registered", value: totalUsers },
                       { label: "Paid Members", value: paidUsers },
-                      {
-                        label: "Active Users",
-                        value: activeUsers,
-                      },
+                      { label: "Active Users", value: activeUsers },
                       {
                         label: "Unpaid Users",
                         value: totalUsers - paidUsers,
@@ -1512,10 +1397,7 @@ export default function AdminPage() {
                         label: "Total Submissions",
                         value: paymentSubmissions?.length ?? 0,
                       },
-                      {
-                        label: "Pending",
-                        value: pendingPayments,
-                      },
+                      { label: "Pending", value: pendingPayments },
                       {
                         label: "Approved",
                         value:

@@ -167,14 +167,20 @@ export enum UserRole {
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
+    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     claimFirstAdmin(): Promise<void>;
     deleteUser(userId: bigint): Promise<void>;
+    deleteUserWithPassword(password: string, userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
+    deleteVideoWithPassword(password: string, videoId: bigint): Promise<void>;
     forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
+    getAllPaymentSubmissionsWithPassword(password: string): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
+    getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
+    getAllVideosPublic(): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
@@ -199,7 +205,10 @@ export interface backendInterface {
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
     updateUser(userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
+    updateUserStatusWithPassword(password: string, userId: bigint, isActive: boolean): Promise<void>;
+    updateUserWithPassword(password: string, userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
+    verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint, action: string): Promise<void>;
 }
 import type { PaymentStatus as _PaymentStatus, PaymentSubmission as _PaymentSubmission, ReferralNode as _ReferralNode, User as _User, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
@@ -229,6 +238,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.addVideo(arg0, arg1, arg2, arg3, arg4);
+            return result;
+        }
+    }
+    async addVideoWithPassword(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
             return result;
         }
     }
@@ -274,6 +297,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async deleteUserWithPassword(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteUserWithPassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteUserWithPassword(arg0, arg1);
+            return result;
+        }
+    }
     async deleteVideo(arg0: bigint): Promise<void> {
         if (this.processError) {
             try {
@@ -285,6 +322,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteVideo(arg0);
+            return result;
+        }
+    }
+    async deleteVideoWithPassword(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteVideoWithPassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteVideoWithPassword(arg0, arg1);
             return result;
         }
     }
@@ -316,6 +367,20 @@ export class Backend implements backendInterface {
             return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getAllPaymentSubmissionsWithPassword(arg0: string): Promise<Array<PaymentSubmission>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllPaymentSubmissionsWithPassword(arg0);
+                return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllPaymentSubmissionsWithPassword(arg0);
+            return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getAllUsers(): Promise<Array<User>> {
         if (this.processError) {
             try {
@@ -330,6 +395,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getAllUsersWithPassword(arg0: string): Promise<Array<User>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllUsersWithPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllUsersWithPassword(arg0);
+            return result;
+        }
+    }
     async getAllVideos(): Promise<Array<Video>> {
         if (this.processError) {
             try {
@@ -341,6 +420,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getAllVideos();
+            return result;
+        }
+    }
+    async getAllVideosPublic(): Promise<Array<Video>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllVideosPublic();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllVideosPublic();
             return result;
         }
     }
@@ -615,6 +708,34 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async updateUserStatusWithPassword(arg0: string, arg1: bigint, arg2: boolean): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateUserStatusWithPassword(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateUserStatusWithPassword(arg0, arg1, arg2);
+            return result;
+        }
+    }
+    async updateUserWithPassword(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: boolean): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateUserWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateUserWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
+            return result;
+        }
+    }
     async verifyPaymentSubmission(arg0: bigint, arg1: string): Promise<void> {
         if (this.processError) {
             try {
@@ -626,6 +747,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.verifyPaymentSubmission(arg0, arg1);
+            return result;
+        }
+    }
+    async verifyPaymentSubmissionWithPassword(arg0: string, arg1: bigint, arg2: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1, arg2);
             return result;
         }
     }

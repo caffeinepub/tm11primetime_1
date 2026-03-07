@@ -59,12 +59,11 @@ export default function RegisterPage() {
   const registerMutation = useRegisterMutation();
   const submitPaymentProofMutation = useSubmitPaymentProofMutation();
 
-  // If user is already logged in (phone saved), check their payment status using the public getUserByPhone
+  // If user is already logged in (phone saved), check their payment status
   useEffect(() => {
     if (!phoneAuth.isLoggedIn || !phoneAuth.phone) return;
     if (!actor || actorFetching) return;
 
-    // Use the public getUserByPhone -- no auth required, works for anonymous/phone users
     actor
       .getUserByPhone(phoneAuth.phone)
       .then((user) => {
@@ -85,7 +84,8 @@ export default function RegisterPage() {
         }
       })
       .catch(() => {
-        // Lookup failed — stay on form
+        // getUserByPhone failed (e.g. Unauthorized on anonymous actor) — stay on form
+        // user can still register or login manually
       });
   }, [
     phoneAuth.isLoggedIn,
@@ -109,8 +109,7 @@ export default function RegisterPage() {
 
     setError(null);
 
-    // Step 1: Always check if user already exists by phone (login flow)
-    // This runs regardless of whether name/email are filled
+    // Step 1: Check if user already exists by phone (login flow)
     if (actor) {
       try {
         const existingUser = await actor.getUserByPhone(form.phone.trim());
@@ -133,8 +132,10 @@ export default function RegisterPage() {
           }
           return;
         }
+        // User not found — proceed to register below
       } catch {
-        // getUserByPhone failed — proceed to register as new user below
+        // getUserByPhone failed (e.g. Unauthorized on anonymous actor)
+        // This is expected -- proceed to register as new user
       }
     }
 

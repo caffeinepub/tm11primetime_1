@@ -84,14 +84,26 @@ export interface WatchRecord {
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addVideo' : ActorMethod<[string, string, string, string, bigint], undefined>,
+  'addVideoWithPassword' : ActorMethod<
+    [string, string, string, string, string, bigint],
+    undefined
+  >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'claimFirstAdmin' : ActorMethod<[], undefined>,
   'deleteUser' : ActorMethod<[bigint], undefined>,
+  'deleteUserWithPassword' : ActorMethod<[string, bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,
+  'deleteVideoWithPassword' : ActorMethod<[string, bigint], undefined>,
   'forceSetAdmin' : ActorMethod<[string], string>,
   'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
+  'getAllPaymentSubmissionsWithPassword' : ActorMethod<
+    [string],
+    Array<PaymentSubmission>
+  >,
   'getAllUsers' : ActorMethod<[], Array<User>>,
+  'getAllUsersWithPassword' : ActorMethod<[string], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
+  'getAllVideosPublic' : ActorMethod<[], Array<Video>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getMyPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
@@ -122,7 +134,19 @@ export interface _SERVICE {
     undefined
   >,
   'updateUserStatus' : ActorMethod<[bigint, boolean], undefined>,
+  'updateUserStatusWithPassword' : ActorMethod<
+    [string, bigint, boolean],
+    undefined
+  >,
+  'updateUserWithPassword' : ActorMethod<
+    [string, bigint, string, string, string, boolean],
+    undefined
+  >,
   'verifyPaymentSubmission' : ActorMethod<[bigint, string], undefined>,
+  'verifyPaymentSubmissionWithPassword' : ActorMethod<
+    [string, bigint, string],
+    undefined
+  >,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

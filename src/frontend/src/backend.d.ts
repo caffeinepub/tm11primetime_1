@@ -84,14 +84,20 @@ export enum UserRole {
 }
 export interface backendInterface {
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
+    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     claimFirstAdmin(): Promise<void>;
     deleteUser(userId: bigint): Promise<void>;
+    deleteUserWithPassword(password: string, userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
+    deleteVideoWithPassword(password: string, videoId: bigint): Promise<void>;
     forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
+    getAllPaymentSubmissionsWithPassword(password: string): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
+    getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
+    getAllVideosPublic(): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
@@ -116,5 +122,8 @@ export interface backendInterface {
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
     updateUser(userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
+    updateUserStatusWithPassword(password: string, userId: bigint, isActive: boolean): Promise<void>;
+    updateUserWithPassword(password: string, userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
     verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
+    verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint, action: string): Promise<void>;
 }
