@@ -21,9 +21,9 @@ import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { Video } from "../backend.d";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
   useAllVideos,
-  useCallerUserProfile,
   useRecordWatchProgressMutation,
   useWatchHistory,
 } from "../hooks/useQueries";
@@ -117,8 +117,8 @@ export default function VideoPlayerPage() {
   const { id } = useParams({ from: "/layout/videos/$id" });
   const navigate = useNavigate();
 
-  const { data: callerProfile } = useCallerUserProfile();
-  const userId = callerProfile?.userId ?? null;
+  const phoneAuth = usePhoneAuth();
+  const userId = phoneAuth.userId;
 
   const { data: allVideos, isLoading: videosLoading } = useAllVideos();
   const { data: watchHistory } = useWatchHistory(userId);

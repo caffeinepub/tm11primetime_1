@@ -88,6 +88,7 @@ export interface _SERVICE {
   'claimFirstAdmin' : ActorMethod<[], undefined>,
   'deleteUser' : ActorMethod<[bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,
+  'forceSetAdmin' : ActorMethod<[string], string>,
   'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getAllUsers' : ActorMethod<[], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
@@ -97,7 +98,17 @@ export interface _SERVICE {
   'getMyProfile' : ActorMethod<[bigint], User>,
   'getMyWatchHistory' : ActorMethod<[], Array<WatchRecord>>,
   'getReferralTree' : ActorMethod<[bigint], ReferralNode>,
+  'getReferralTreeByCode' : ActorMethod<
+    [string],
+    {
+      'id' : bigint,
+      'referralCode' : string,
+      'name' : string,
+      'children' : Array<ReferralNode>,
+    }
+  >,
   'getTransactions' : ActorMethod<[], Array<Transaction>>,
+  'getUserByPhone' : ActorMethod<[string], [] | [User]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'getVideosByCategory' : ActorMethod<[string], Array<Video>>,
   'isAdminAssigned' : ActorMethod<[], boolean>,

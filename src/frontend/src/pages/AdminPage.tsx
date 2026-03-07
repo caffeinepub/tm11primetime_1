@@ -42,28 +42,27 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
   BarChart3,
   CheckCircle,
-  Eye,
-  EyeOff,
   Loader2,
-  Lock,
+  LogOut,
   Pencil,
   PlayCircle,
   Plus,
   Receipt,
+  RefreshCw,
   Shield,
   Trash2,
   Users,
   XCircle,
 } from "lucide-react";
-import { motion } from "motion/react";
+import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../backend.d";
+import { useInternetIdentity } from "../hooks/useInternetIdentity";
 import {
   useAddVideoMutation,
   useAllPaymentSubmissions,
@@ -72,16 +71,13 @@ import {
   useClaimFirstAdminMutation,
   useDeleteUserMutation,
   useDeleteVideoMutation,
+  useForceSetAdminMutation,
   useIsAdmin,
   useIsAdminAssigned,
   useUpdateUserMutation,
   useUpdateUserStatusMutation,
   useVerifyPaymentSubmissionMutation,
 } from "../hooks/useQueries";
-
-// Admin PIN -- change this to your preferred password
-const ADMIN_PIN = "admin@tm11";
-const ADMIN_SESSION_KEY = "tm11_admin_unlocked";
 
 const VIDEO_CATEGORIES = [
   "Tutorial",
@@ -108,15 +104,237 @@ const initialFormData: AddVideoFormData = {
   duration: "",
 };
 
+// ── Login Screen ─────────────────────────────────────────────────────────────
+
+function AdminLoginScreen() {
+  const { login, isLoggingIn, isInitializing } = useInternetIdentity();
+
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.45, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-sm"
+        data-ocid="admin.login.panel"
+      >
+        {/* Icon */}
+        <div className="flex justify-center mb-6">
+          <div className="relative">
+            <div className="w-20 h-20 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center shadow-lg shadow-primary/10">
+              <Shield className="w-9 h-9 text-primary" />
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-6 h-6 rounded-full bg-amber-500 flex items-center justify-center">
+              <span className="text-xs font-bold text-black">A</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Title */}
+        <div className="text-center mb-8">
+          <h1 className="font-display font-black text-2xl text-foreground mb-2">
+            Admin <span className="text-gradient-gold">Access</span>
+          </h1>
+          <p className="text-muted-foreground text-sm font-body leading-relaxed">
+            Sign in with Internet Identity to access the admin panel. Only
+            authorized admins can view this section.
+          </p>
+        </div>
+
+        {/* Login Card */}
+        <Card className="card-premium border border-primary/15">
+          <CardContent className="p-6 space-y-5">
+            <Button
+              className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90 transition-opacity"
+              onClick={login}
+              disabled={isLoggingIn || isInitializing}
+              data-ocid="admin.login.primary_button"
+            >
+              {isLoggingIn ? (
+                <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              ) : (
+                <Shield className="w-5 h-5 mr-2" />
+              )}
+              {isLoggingIn
+                ? "Opening Identity..."
+                : "Login with Internet Identity"}
+            </Button>
+
+            <div className="rounded-lg bg-muted/30 border border-border p-3">
+              <p className="text-xs text-muted-foreground font-body leading-relaxed">
+                <span className="font-semibold text-foreground/70">Tip:</span>{" "}
+                Open this app from your Caffeine dashboard to auto-configure
+                admin access with your token.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Not Admin Screen ──────────────────────────────────────────────────────────
+
+interface NotAdminScreenProps {
+  isAdminAssigned: boolean;
+  onClaimAdmin: () => void;
+  isClaiming: boolean;
+  onLogout: () => void;
+  principal: string;
+  onForceSetAdmin: (principal: string) => void;
+  isForceSetting: boolean;
+}
+
+function NotAdminScreen({
+  isAdminAssigned,
+  onClaimAdmin,
+  isClaiming,
+  onLogout,
+  principal,
+  onForceSetAdmin,
+  isForceSetting,
+}: NotAdminScreenProps) {
+  return (
+    <div className="min-h-[70vh] flex items-center justify-center p-6">
+      <motion.div
+        initial={{ opacity: 0, y: 24 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+        className="w-full max-w-sm space-y-4"
+        data-ocid="admin.notadmin.panel"
+      >
+        <div className="flex justify-center mb-6">
+          <div className="w-20 h-20 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+            <Shield className="w-9 h-9 text-amber-400" />
+          </div>
+        </div>
+
+        <Card className="card-premium border border-amber-500/15">
+          <CardContent className="p-6 space-y-5">
+            <div className="text-center">
+              <h2 className="font-display font-bold text-xl text-foreground mb-1">
+                {isAdminAssigned ? "Access Denied" : "First-Time Setup"}
+              </h2>
+              <p className="text-muted-foreground text-sm font-body">
+                {isAdminAssigned
+                  ? "This account does not have admin access."
+                  : "No admin has been assigned yet. Claim admin rights for your account."}
+              </p>
+            </div>
+
+            <div className="rounded-lg bg-muted/20 border border-border p-3 break-all">
+              <p className="text-xs text-muted-foreground font-body">
+                <span className="font-semibold text-foreground/60">
+                  Principal:
+                </span>{" "}
+                <span className="font-mono text-xs">{principal}</span>
+              </p>
+            </div>
+
+            {!isAdminAssigned && (
+              <Button
+                className="w-full bg-primary text-primary-foreground font-ui py-5 hover:opacity-90"
+                onClick={onClaimAdmin}
+                disabled={isClaiming}
+                data-ocid="admin.claim.primary_button"
+              >
+                {isClaiming ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <Shield className="w-5 h-5 mr-2" />
+                )}
+                {isClaiming ? "Claiming..." : "Become Admin"}
+              </Button>
+            )}
+
+            <Button
+              variant="outline"
+              className="w-full border-border font-ui text-muted-foreground hover:text-foreground"
+              onClick={onLogout}
+              data-ocid="admin.notadmin.logout.button"
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Log Out
+            </Button>
+          </CardContent>
+        </Card>
+
+        {isAdminAssigned && (
+          <Card
+            className="card-premium border border-amber-500/30 bg-amber-500/5"
+            data-ocid="admin.recovery.panel"
+          >
+            <CardContent className="p-6 space-y-4">
+              <div>
+                <h3 className="font-display font-bold text-base text-amber-400 mb-1">
+                  Admin Recovery
+                </h3>
+                <p className="text-muted-foreground text-xs font-body leading-relaxed">
+                  If you are the app owner, you can forcefully claim admin
+                  access using your current Internet Identity principal.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="font-ui text-xs text-muted-foreground">
+                  Your Principal
+                </Label>
+                <Input
+                  readOnly
+                  value={principal}
+                  className="bg-input border-border font-mono text-xs text-foreground/80 select-all"
+                  onClick={(e) => (e.target as HTMLInputElement).select()}
+                />
+              </div>
+
+              <Button
+                className="w-full bg-amber-500 hover:bg-amber-600 text-black font-ui font-semibold py-5 transition-colors"
+                onClick={() => onForceSetAdmin(principal)}
+                disabled={isForceSetting}
+                data-ocid="admin.recovery.primary_button"
+              >
+                {isForceSetting ? (
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                ) : (
+                  <Shield className="w-5 h-5 mr-2" />
+                )}
+                {isForceSetting ? "Claiming..." : "Claim Admin (Force)"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Main Admin Panel ──────────────────────────────────────────────────────────
+
 export default function AdminPage() {
-  const navigate = useNavigate();
+  const { identity, clear, isInitializing, isLoggingIn } =
+    useInternetIdentity();
+  const isLoggedIn = !!identity;
+
   const { data: isAdmin, isLoading: adminLoading } = useIsAdmin();
   const { data: isAdminAssigned } = useIsAdminAssigned();
   const claimFirstAdminMutation = useClaimFirstAdminMutation();
-  const { data: users, isLoading: usersLoading } = useAllUsers();
+  const forceSetAdminMutation = useForceSetAdminMutation();
+
+  // Only enable admin-only backend queries when confirmed admin on blockchain
+  const isAdminReady = isAdmin === true;
+
+  const {
+    data: users,
+    isLoading: usersLoading,
+    refetch: refetchUsers,
+  } = useAllUsers(isAdminReady);
   const { data: videos, isLoading: videosLoading } = useAllVideos();
-  const { data: paymentSubmissions, isLoading: paymentsLoading } =
-    useAllPaymentSubmissions();
+  const {
+    data: paymentSubmissions,
+    isLoading: paymentsLoading,
+    refetch: refetchPayments,
+  } = useAllPaymentSubmissions(isAdminReady);
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
   const updateUserMutation = useUpdateUserMutation();
@@ -128,15 +346,6 @@ export default function AdminPage() {
   const [addVideoOpen, setAddVideoOpen] = useState(false);
   const [videoForm, setVideoForm] = useState<AddVideoFormData>(initialFormData);
   const [formError, setFormError] = useState<string | null>(null);
-
-  // PIN login state
-  const [pinUnlocked, setPinUnlocked] = useState(
-    () => sessionStorage.getItem(ADMIN_SESSION_KEY) === "1",
-  );
-  const [pinInput, setPinInput] = useState("");
-  const [pinError, setPinError] = useState("");
-  const [showPin, setShowPin] = useState(false);
-  const [pinLoading, setPinLoading] = useState(false);
 
   // Edit user dialog state
   const [editUser, setEditUser] = useState<User | null>(null);
@@ -262,1035 +471,1103 @@ export default function AdminPage() {
     }
   };
 
-  const handlePinLogin = async () => {
-    if (!pinInput.trim()) {
-      setPinError("Please enter your admin PIN.");
-      return;
+  const handleClaimAdmin = async () => {
+    try {
+      await claimFirstAdminMutation.mutateAsync();
+      toast.success("Admin access granted! Welcome.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Failed to claim admin";
+      toast.error(msg);
     }
-    if (pinInput !== ADMIN_PIN) {
-      setPinError("Incorrect PIN. Please try again.");
-      setPinInput("");
-      return;
-    }
-    setPinError("");
-    setPinLoading(true);
-    // Silently try to claim first admin on blockchain if not yet assigned
-    if (!isAdminAssigned) {
-      try {
-        await claimFirstAdminMutation.mutateAsync();
-      } catch {
-        // ignore -- may already be assigned or fail silently
-      }
-    }
-    sessionStorage.setItem(ADMIN_SESSION_KEY, "1");
-    setPinUnlocked(true);
-    setPinLoading(false);
-    toast.success("Welcome, Admin!");
   };
 
+  // ── Loading state while auth initializes ──────────────────────────────────
+  if (isInitializing || isLoggingIn) {
+    return (
+      <div className="p-6 space-y-4" data-ocid="admin.loading_state">
+        <div className="flex items-center gap-3">
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3.5 w-48" />
+          </div>
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
+      </div>
+    );
+  }
+
+  // ── Not logged in ─────────────────────────────────────────────────────────
+  if (!isLoggedIn) {
+    return <AdminLoginScreen />;
+  }
+
+  // ── Checking admin status ─────────────────────────────────────────────────
   if (adminLoading) {
     return (
       <div className="p-6 space-y-4" data-ocid="admin.loading_state">
-        <Skeleton className="h-8 w-48 animate-shimmer" />
-        <Skeleton className="h-64 animate-shimmer rounded-xl" />
-      </div>
-    );
-  }
-
-  // Show PIN login if not unlocked via PIN and not already admin on blockchain
-  if (!pinUnlocked && !isAdmin) {
-    return (
-      <div className="p-6 flex items-center justify-center min-h-[60vh]">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: "easeOut" }}
-          className="w-full max-w-sm space-y-6"
-          data-ocid="admin.login.panel"
-        >
-          {/* Logo */}
-          <div className="text-center space-y-3">
-            <div className="w-20 h-20 rounded-2xl bg-primary/20 border border-primary/30 flex items-center justify-center mx-auto">
-              <Lock className="w-10 h-10 text-primary" />
-            </div>
-            <div>
-              <h2 className="font-display font-black text-2xl text-foreground">
-                Admin Login
-              </h2>
-              <p className="text-muted-foreground text-sm font-body mt-1">
-                Enter your admin PIN to access the panel
-              </p>
-            </div>
+        <div className="flex items-center gap-3">
+          <Skeleton className="w-10 h-10 rounded-xl" />
+          <div className="space-y-1.5">
+            <Skeleton className="h-5 w-32" />
+            <Skeleton className="h-3.5 w-48" />
           </div>
-
-          <Card className="card-premium border border-primary/20">
-            <CardContent className="p-6 space-y-4">
-              <div className="space-y-2">
-                <Label
-                  htmlFor="adminPin"
-                  className="font-ui text-sm text-foreground"
-                >
-                  Admin PIN
-                </Label>
-                <div className="relative">
-                  <Input
-                    id="adminPin"
-                    type={showPin ? "text" : "password"}
-                    value={pinInput}
-                    onChange={(e) => {
-                      setPinInput(e.target.value);
-                      setPinError("");
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") handlePinLogin();
-                    }}
-                    placeholder="Enter admin PIN"
-                    className="bg-input border-border font-mono text-base pr-10"
-                    autoFocus
-                    data-ocid="admin.login.input"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPin((v) => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                    tabIndex={-1}
-                  >
-                    {showPin ? (
-                      <EyeOff className="w-4 h-4" />
-                    ) : (
-                      <Eye className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-                {pinError && (
-                  <p
-                    className="text-destructive text-sm font-body flex items-center gap-1.5"
-                    data-ocid="admin.login.error_state"
-                  >
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    {pinError}
-                  </p>
-                )}
-              </div>
-
-              <Button
-                className="w-full bg-primary text-primary-foreground font-ui text-base py-5 hover:opacity-90"
-                onClick={handlePinLogin}
-                disabled={pinLoading || !pinInput.trim()}
-                data-ocid="admin.login.submit_button"
-              >
-                {pinLoading ? (
-                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
-                ) : (
-                  <Shield className="w-5 h-5 mr-2" />
-                )}
-                {pinLoading ? "Logging in…" : "Login"}
-              </Button>
-            </CardContent>
-          </Card>
-
-          <Button
-            variant="ghost"
-            className="w-full font-ui text-muted-foreground hover:text-foreground"
-            onClick={() => navigate({ to: "/dashboard" })}
-            data-ocid="admin.login.cancel_button"
-          >
-            Back to Dashboard
-          </Button>
-        </motion.div>
+        </div>
+        <Skeleton className="h-64 rounded-xl" />
       </div>
     );
   }
 
-  // Stats
+  // ── Logged in but not admin ───────────────────────────────────────────────
+  if (!isAdmin) {
+    return (
+      <NotAdminScreen
+        isAdminAssigned={isAdminAssigned === true}
+        onClaimAdmin={handleClaimAdmin}
+        isClaiming={claimFirstAdminMutation.isPending}
+        onLogout={clear}
+        principal={identity.getPrincipal().toString()}
+        onForceSetAdmin={async (principal) => {
+          try {
+            await forceSetAdminMutation.mutateAsync(principal);
+            toast.success("Admin access granted! You are now the admin.");
+          } catch (err) {
+            const msg =
+              err instanceof Error ? err.message : "Failed to set admin";
+            toast.error(msg);
+          }
+        }}
+        isForceSetting={forceSetAdminMutation.isPending}
+      />
+    );
+  }
+
+  // ── Full admin panel ──────────────────────────────────────────────────────
   const totalUsers = users?.length ?? 0;
   const paidUsers = users?.filter((u) => u.isPaid).length ?? 0;
   const activeUsers = users?.filter((u) => u.isActive).length ?? 0;
-  const totalWallet =
-    (users ?? []).reduce((sum, u) => sum + Number(u.walletBalance), 0) / 100;
+  const pendingPayments =
+    paymentSubmissions?.filter((p) => String(p.status) === "pending").length ??
+    0;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
-      {/* Header */}
+    <AnimatePresence mode="wait">
       <motion.div
-        initial={{ opacity: 0, y: -8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex items-center gap-3 mb-6"
+        key="admin-panel"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.3 }}
+        className="p-6 max-w-7xl mx-auto"
       >
-        <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-          <Shield className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <h1 className="font-display font-black text-2xl text-foreground">
-            Admin <span className="text-gradient-gold">Panel</span>
-          </h1>
-          <p className="text-muted-foreground text-sm font-body">
-            Manage users, videos, and platform settings
-          </p>
-        </div>
-      </motion.div>
-
-      <Tabs defaultValue="users">
-        <TabsList className="bg-card border border-border h-auto p-1 mb-6 flex-wrap gap-1">
-          <TabsTrigger
-            value="users"
-            className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            data-ocid="admin.users.tab"
+        {/* Header */}
+        <div className="flex items-center justify-between gap-3 mb-6">
+          <motion.div
+            initial={{ opacity: 0, x: -12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+            className="flex items-center gap-3"
           >
-            <Users className="w-4 h-4" />
-            Users ({totalUsers})
-          </TabsTrigger>
-          <TabsTrigger
-            value="payments"
-            className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            data-ocid="admin.payments.tab"
-          >
-            <Receipt className="w-4 h-4" />
-            Payments ({paymentSubmissions?.length ?? 0})
-          </TabsTrigger>
-          <TabsTrigger
-            value="videos"
-            className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            data-ocid="admin.videos.tab"
-          >
-            <PlayCircle className="w-4 h-4" />
-            Videos ({videos?.length ?? 0})
-          </TabsTrigger>
-          <TabsTrigger
-            value="stats"
-            className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
-            data-ocid="admin.stats.tab"
-          >
-            <BarChart3 className="w-4 h-4" />
-            Stats
-          </TabsTrigger>
-        </TabsList>
-
-        {/* ── USERS TAB ── */}
-        <TabsContent value="users">
-          <Card className="card-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display font-bold text-lg text-foreground">
-                All Users
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {usersLoading ? (
-                <div
-                  className="p-5 space-y-3"
-                  data-ocid="admin.users.loading_state"
-                >
-                  {["s1", "s2", "s3", "s4", "s5"].map((k) => (
-                    <Skeleton
-                      key={k}
-                      className="h-12 rounded-lg animate-shimmer"
-                    />
-                  ))}
-                </div>
-              ) : !users || users.length === 0 ? (
-                <div
-                  className="p-10 text-center"
-                  data-ocid="admin.users.empty_state"
-                >
-                  <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
-                  <p className="text-muted-foreground font-body text-sm">
-                    No users registered yet
-                  </p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[500px]">
-                  <Table data-ocid="admin.users.table">
-                    <TableHeader>
-                      <TableRow className="border-border hover:bg-transparent">
-                        {[
-                          "Name",
-                          "Email",
-                          "Phone",
-                          "Balance",
-                          "Paid",
-                          "Status",
-                          "Actions",
-                        ].map((h) => (
-                          <TableHead
-                            key={h}
-                            className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
-                          >
-                            {h}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {users.map((user, i) => {
-                        const ocidIndex = i + 1;
-                        return (
-                          <TableRow
-                            key={user.id.toString()}
-                            className="border-border hover:bg-muted/20 transition-colors"
-                            data-ocid={`admin.users.item.${ocidIndex}`}
-                          >
-                            <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
-                              {user.name}
-                            </TableCell>
-                            <TableCell className="py-3 text-sm text-muted-foreground font-body">
-                              {user.email || "—"}
-                            </TableCell>
-                            <TableCell className="py-3 text-sm text-muted-foreground font-body">
-                              {user.phone || "—"}
-                            </TableCell>
-                            <TableCell className="py-3 text-sm font-display font-bold text-green-400">
-                              ₹{(Number(user.walletBalance) / 100).toFixed(2)}
-                            </TableCell>
-                            <TableCell className="py-3">
-                              {user.isPaid ? (
-                                <CheckCircle className="w-4 h-4 text-green-400" />
-                              ) : (
-                                <XCircle className="w-4 h-4 text-red-400" />
-                              )}
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <Badge
-                                variant="outline"
-                                className={
-                                  user.isActive
-                                    ? "border-green-500/30 text-green-300 bg-green-500/10 text-xs"
-                                    : "border-red-500/30 text-red-300 bg-red-500/10 text-xs"
-                                }
-                              >
-                                {user.isActive ? "Active" : "Inactive"}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <div className="flex items-center gap-1.5">
-                                <Switch
-                                  checked={user.isActive}
-                                  onCheckedChange={() =>
-                                    handleToggleUserStatus(
-                                      user.id,
-                                      user.isActive,
-                                    )
-                                  }
-                                  disabled={updateUserStatusMutation.isPending}
-                                  data-ocid={`admin.users.switch.${ocidIndex}`}
-                                />
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => handleOpenEditUser(user)}
-                                  className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-8 h-8"
-                                  data-ocid={`admin.users.edit_button.${ocidIndex}`}
-                                >
-                                  <Pencil className="w-3.5 h-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => {
-                                    setDeleteUserId(user.id);
-                                    setDeleteUserName(user.name);
-                                  }}
-                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
-                                  data-ocid={`admin.users.delete_button.${ocidIndex}`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* ── Edit User Dialog ── */}
-          <Dialog open={editOpen} onOpenChange={setEditOpen}>
-            <DialogContent
-              className="bg-card border-border max-w-md"
-              data-ocid="admin.users.edit.dialog"
-            >
-              <DialogHeader>
-                <DialogTitle className="font-display font-bold text-foreground">
-                  Edit User
-                </DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 py-2">
-                <div className="space-y-1.5">
-                  <Label htmlFor="editName" className="font-ui text-sm">
-                    Full Name
-                  </Label>
-                  <Input
-                    id="editName"
-                    value={editForm.name}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({ ...prev, name: e.target.value }))
-                    }
-                    placeholder="Full name"
-                    className="bg-input border-border font-body"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="editEmail" className="font-ui text-sm">
-                    Email
-                  </Label>
-                  <Input
-                    id="editEmail"
-                    type="email"
-                    value={editForm.email}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({
-                        ...prev,
-                        email: e.target.value,
-                      }))
-                    }
-                    placeholder="Email address"
-                    className="bg-input border-border font-body"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="editPhone" className="font-ui text-sm">
-                    Phone
-                  </Label>
-                  <Input
-                    id="editPhone"
-                    type="tel"
-                    value={editForm.phone}
-                    onChange={(e) =>
-                      setEditForm((prev) => ({
-                        ...prev,
-                        phone: e.target.value,
-                      }))
-                    }
-                    placeholder="Phone number"
-                    className="bg-input border-border font-body"
-                  />
-                </div>
-                <div className="flex items-center justify-between py-1">
-                  <Label htmlFor="editActive" className="font-ui text-sm">
-                    Active Status
-                  </Label>
-                  <Switch
-                    id="editActive"
-                    checked={editForm.isActive}
-                    onCheckedChange={(checked) =>
-                      setEditForm((prev) => ({ ...prev, isActive: checked }))
-                    }
-                  />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  variant="outline"
-                  onClick={() => setEditOpen(false)}
-                  className="border-border font-ui"
-                  data-ocid="admin.users.edit.cancel_button"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleSaveEditUser}
-                  disabled={updateUserMutation.isPending}
-                  className="bg-primary text-primary-foreground font-ui"
-                  data-ocid="admin.users.edit.save_button"
-                >
-                  {updateUserMutation.isPending ? (
-                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                  ) : null}
-                  {updateUserMutation.isPending ? "Saving..." : "Save Changes"}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-
-          {/* ── Delete User AlertDialog ── */}
-          <AlertDialog
-            open={deleteUserId !== null}
-            onOpenChange={(open) => {
-              if (!open) {
-                setDeleteUserId(null);
-                setDeleteUserName("");
-              }
-            }}
-          >
-            <AlertDialogContent
-              className="bg-card border-border"
-              data-ocid="admin.users.delete.dialog"
-            >
-              <AlertDialogHeader>
-                <AlertDialogTitle className="font-display font-bold text-foreground">
-                  Delete User
-                </AlertDialogTitle>
-                <AlertDialogDescription className="font-body text-muted-foreground">
-                  Are you sure you want to permanently delete{" "}
-                  <span className="font-semibold text-foreground">
-                    "{deleteUserName}"
-                  </span>
-                  ? This action cannot be undone.
-                </AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel
-                  className="font-ui border-border"
-                  data-ocid="admin.users.delete.cancel_button"
-                >
-                  Cancel
-                </AlertDialogCancel>
-                <AlertDialogAction
-                  onClick={handleConfirmDeleteUser}
-                  disabled={deleteUserMutation.isPending}
-                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-ui"
-                  data-ocid="admin.users.delete.confirm_button"
-                >
-                  {deleteUserMutation.isPending ? (
-                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                  ) : null}
-                  {deleteUserMutation.isPending ? "Deleting..." : "Delete User"}
-                </AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
-        </TabsContent>
-
-        {/* ── PAYMENTS TAB ── */}
-        <TabsContent value="payments" data-ocid="admin.payments.panel">
-          <Card className="card-premium">
-            <CardHeader className="pb-3">
-              <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
-                <Receipt className="w-5 h-5 text-primary" />
-                Payment Submissions
-              </CardTitle>
-              <p className="text-muted-foreground text-xs font-body mt-1">
-                Review and verify user payment proof submissions
+            <div className="w-10 h-10 rounded-xl bg-primary/20 border border-primary/20 flex items-center justify-center">
+              <Shield className="w-5 h-5 text-primary" />
+            </div>
+            <div>
+              <h1 className="font-display font-black text-2xl text-foreground">
+                Admin <span className="text-gradient-gold">Panel</span>
+              </h1>
+              <p className="text-muted-foreground text-sm font-body">
+                Manage users, payments, videos, and platform stats
               </p>
-            </CardHeader>
-            <CardContent className="p-0">
-              {paymentsLoading ? (
-                <div
-                  className="p-5 space-y-3"
-                  data-ocid="admin.payments.loading_state"
-                >
-                  {["s1", "s2", "s3", "s4"].map((k) => (
-                    <Skeleton
-                      key={k}
-                      className="h-12 rounded-lg animate-shimmer"
-                    />
-                  ))}
-                </div>
-              ) : !paymentSubmissions || paymentSubmissions.length === 0 ? (
-                <div
-                  className="p-10 text-center"
-                  data-ocid="admin.payments.empty_state"
-                >
-                  <Receipt className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
-                  <p className="text-muted-foreground font-body text-sm">
-                    No payment submissions yet
-                  </p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[560px]">
-                  <Table data-ocid="admin.payments.table">
-                    <TableHeader>
-                      <TableRow className="border-border hover:bg-transparent">
-                        {[
-                          "Name",
-                          "Phone",
-                          "Amount",
-                          "UTR / Transaction ID",
-                          "Status",
-                          "Submitted At",
-                          "Actions",
-                        ].map((h) => (
-                          <TableHead
-                            key={h}
-                            className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
-                          >
-                            {h}
-                          </TableHead>
-                        ))}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {paymentSubmissions.map((submission, i) => {
-                        const ocidIndex = i + 1;
-                        const submittedAt = new Date(
-                          Number(submission.timestamp / BigInt(1_000_000)),
-                        ).toLocaleString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        });
-                        const isPending = submission.status === "pending";
-                        return (
-                          <TableRow
-                            key={submission.id.toString()}
-                            className="border-border hover:bg-muted/20 transition-colors"
-                            data-ocid={`admin.payments.item.${ocidIndex}`}
-                          >
-                            <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
-                              {submission.name}
-                            </TableCell>
-                            <TableCell className="py-3 text-sm text-muted-foreground font-body">
-                              {submission.phone}
-                            </TableCell>
-                            <TableCell className="py-3 text-sm font-display font-bold text-green-400 whitespace-nowrap">
-                              ₹{submission.amount}
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
-                                {submission.utr}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <Badge
-                                variant="outline"
-                                className={
-                                  submission.status === "approved"
-                                    ? "border-green-500/30 text-green-300 bg-green-500/10 text-xs"
-                                    : submission.status === "rejected"
-                                      ? "border-red-500/30 text-red-300 bg-red-500/10 text-xs"
-                                      : "border-amber-500/30 text-amber-300 bg-amber-500/10 text-xs"
-                                }
-                              >
-                                {submission.status === "approved" && (
-                                  <CheckCircle className="w-3 h-3 mr-1" />
-                                )}
-                                {submission.status === "rejected" && (
-                                  <XCircle className="w-3 h-3 mr-1" />
-                                )}
-                                {String(submission.status)
-                                  .charAt(0)
-                                  .toUpperCase() +
-                                  String(submission.status).slice(1)}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-3 text-xs text-muted-foreground font-body whitespace-nowrap">
-                              {submittedAt}
-                            </TableCell>
-                            <TableCell className="py-3">
-                              {isPending ? (
-                                <div className="flex items-center gap-1.5">
-                                  <Button
-                                    size="sm"
-                                    onClick={async () => {
-                                      try {
-                                        await verifyPaymentMutation.mutateAsync(
-                                          {
-                                            submissionId: submission.id,
-                                            action: "approve",
-                                          },
-                                        );
-                                        toast.success(
-                                          `Payment approved for ${submission.name}`,
-                                        );
-                                      } catch (err) {
-                                        const msg =
-                                          err instanceof Error
-                                            ? err.message
-                                            : "Failed to approve";
-                                        toast.error(msg);
-                                      }
-                                    }}
-                                    disabled={verifyPaymentMutation.isPending}
-                                    className="bg-green-600 hover:bg-green-700 text-white font-ui text-xs h-7 px-2.5"
-                                    data-ocid={`admin.payments.confirm_button.${ocidIndex}`}
-                                  >
-                                    {verifyPaymentMutation.isPending ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <CheckCircle className="w-3 h-3 mr-1" />
-                                    )}
-                                    Approve
-                                  </Button>
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={async () => {
-                                      try {
-                                        await verifyPaymentMutation.mutateAsync(
-                                          {
-                                            submissionId: submission.id,
-                                            action: "reject",
-                                          },
-                                        );
-                                        toast.success(
-                                          `Payment rejected for ${submission.name}`,
-                                        );
-                                      } catch (err) {
-                                        const msg =
-                                          err instanceof Error
-                                            ? err.message
-                                            : "Failed to reject";
-                                        toast.error(msg);
-                                      }
-                                    }}
-                                    disabled={verifyPaymentMutation.isPending}
-                                    className="border-red-500/30 text-red-400 hover:bg-red-500/10 font-ui text-xs h-7 px-2.5"
-                                    data-ocid={`admin.payments.delete_button.${ocidIndex}`}
-                                  >
-                                    {verifyPaymentMutation.isPending ? (
-                                      <Loader2 className="w-3 h-3 animate-spin" />
-                                    ) : (
-                                      <XCircle className="w-3 h-3 mr-1" />
-                                    )}
-                                    Reject
-                                  </Button>
-                                </div>
-                              ) : (
-                                <span className="text-xs text-muted-foreground font-body italic">
-                                  Resolved
-                                </span>
-                              )}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </motion.div>
 
-        {/* ── VIDEOS TAB ── */}
-        <TabsContent value="videos">
-          <Card className="card-premium">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="font-display font-bold text-lg text-foreground">
-                All Videos
-              </CardTitle>
-              <Dialog open={addVideoOpen} onOpenChange={setAddVideoOpen}>
-                <DialogTrigger asChild>
-                  <Button
-                    size="sm"
-                    className="bg-primary text-primary-foreground hover:opacity-90 font-ui"
-                    data-ocid="admin.videos.open_modal_button"
+          <motion.div
+            initial={{ opacity: 0, x: 12 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          >
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clear}
+              className="border-border font-ui text-muted-foreground hover:text-foreground"
+              data-ocid="admin.header.logout.button"
+            >
+              <LogOut className="w-4 h-4 mr-1.5" />
+              Log Out
+            </Button>
+          </motion.div>
+        </div>
+
+        <Tabs defaultValue="users">
+          <TabsList className="bg-card border border-border h-auto p-1 mb-6 flex-wrap gap-1">
+            <TabsTrigger
+              value="users"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.users.tab"
+            >
+              <Users className="w-4 h-4" />
+              Users ({totalUsers})
+            </TabsTrigger>
+            <TabsTrigger
+              value="payments"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.payments.tab"
+            >
+              <Receipt className="w-4 h-4" />
+              Payments
+              {pendingPayments > 0 && (
+                <Badge className="ml-1 h-4 px-1.5 text-xs bg-amber-500 text-black">
+                  {pendingPayments}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger
+              value="videos"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.videos.tab"
+            >
+              <PlayCircle className="w-4 h-4" />
+              Videos ({videos?.length ?? 0})
+            </TabsTrigger>
+            <TabsTrigger
+              value="stats"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.stats.tab"
+            >
+              <BarChart3 className="w-4 h-4" />
+              Stats
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── USERS TAB ── */}
+          <TabsContent value="users">
+            <Card className="card-premium">
+              <CardHeader className="pb-3">
+                <CardTitle className="font-display font-bold text-lg text-foreground">
+                  All Users
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {usersLoading ? (
+                  <div
+                    className="p-5 space-y-3"
+                    data-ocid="admin.users.loading_state"
                   >
-                    <Plus className="w-4 h-4 mr-1.5" />
-                    Add Video
-                  </Button>
-                </DialogTrigger>
-                <DialogContent
-                  className="bg-card border-border max-w-lg"
-                  data-ocid="admin.videos.dialog"
-                >
-                  <DialogHeader>
-                    <DialogTitle className="font-display font-bold text-foreground">
-                      Add New Video
-                    </DialogTitle>
-                  </DialogHeader>
-                  <div className="space-y-4 py-2">
-                    {formError && (
-                      <Alert
-                        variant="destructive"
-                        data-ocid="admin.videos.form.error_state"
-                      >
-                        <AlertCircle className="w-4 h-4" />
-                        <AlertDescription className="font-body text-sm">
-                          {formError}
-                        </AlertDescription>
-                      </Alert>
-                    )}
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vTitle" className="font-ui text-sm">
-                        Title *
-                      </Label>
-                      <Input
-                        id="vTitle"
-                        name="title"
-                        value={videoForm.title}
-                        onChange={handleVideoFormChange}
-                        placeholder="Enter video title"
-                        className="bg-input border-border font-body"
-                        data-ocid="admin.videos.title.input"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vCategory" className="font-ui text-sm">
-                        Category *
-                      </Label>
-                      <Select
-                        value={videoForm.category}
-                        onValueChange={(v) =>
-                          setVideoForm((prev) => ({ ...prev, category: v }))
-                        }
-                      >
-                        <SelectTrigger
-                          id="vCategory"
-                          className="bg-input border-border font-body"
-                          data-ocid="admin.videos.category.select"
-                        >
-                          <SelectValue placeholder="Select category" />
-                        </SelectTrigger>
-                        <SelectContent className="bg-popover border-border">
-                          {VIDEO_CATEGORIES.map((cat) => (
-                            <SelectItem
-                              key={cat}
-                              value={cat}
-                              className="font-ui text-sm"
-                            >
-                              {cat}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vUrl" className="font-ui text-sm">
-                        Video URL *
-                      </Label>
-                      <Input
-                        id="vUrl"
-                        name="url"
-                        value={videoForm.url}
-                        onChange={handleVideoFormChange}
-                        placeholder="https://youtube.com/embed/..."
-                        className="bg-input border-border font-body"
-                        data-ocid="admin.videos.url.input"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vDesc" className="font-ui text-sm">
-                        Description
-                      </Label>
-                      <Textarea
-                        id="vDesc"
-                        name="description"
-                        value={videoForm.description}
-                        onChange={handleVideoFormChange}
-                        placeholder="Enter video description"
-                        className="bg-input border-border font-body resize-none"
-                        rows={3}
-                        data-ocid="admin.videos.description.textarea"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label htmlFor="vDuration" className="font-ui text-sm">
-                        Duration (seconds) *
-                      </Label>
-                      <Input
-                        id="vDuration"
-                        name="duration"
-                        type="number"
-                        value={videoForm.duration}
-                        onChange={handleVideoFormChange}
-                        placeholder="e.g. 1800 for 30 minutes"
-                        className="bg-input border-border font-body"
-                        data-ocid="admin.videos.duration.input"
-                      />
-                    </div>
+                    {["s1", "s2", "s3", "s4", "s5"].map((k) => (
+                      <Skeleton key={k} className="h-12 rounded-lg" />
+                    ))}
                   </div>
-                  <DialogFooter>
-                    <Button
-                      variant="outline"
-                      onClick={() => setAddVideoOpen(false)}
-                      className="border-border font-ui"
-                      data-ocid="admin.videos.cancel.button"
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleAddVideo}
-                      disabled={addVideoMutation.isPending}
-                      className="bg-primary text-primary-foreground font-ui"
-                      data-ocid="admin.videos.submit.button"
-                    >
-                      {addVideoMutation.isPending ? (
-                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                      ) : null}
-                      {addVideoMutation.isPending ? "Adding..." : "Add Video"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </CardHeader>
-            <CardContent className="p-0">
-              {videosLoading ? (
-                <div
-                  className="p-5 space-y-3"
-                  data-ocid="admin.videos.loading_state"
-                >
-                  {["s1", "s2", "s3", "s4"].map((k) => (
-                    <Skeleton
-                      key={k}
-                      className="h-12 rounded-lg animate-shimmer"
-                    />
-                  ))}
-                </div>
-              ) : !videos || videos.length === 0 ? (
-                <div
-                  className="p-10 text-center"
-                  data-ocid="admin.videos.empty_state"
-                >
-                  <PlayCircle className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
-                  <p className="text-muted-foreground font-body text-sm">
-                    No videos added yet. Click "Add Video" to get started.
-                  </p>
-                </div>
-              ) : (
-                <ScrollArea className="max-h-[500px]">
-                  <Table data-ocid="admin.videos.table">
-                    <TableHeader>
-                      <TableRow className="border-border hover:bg-transparent">
-                        {["Title", "Category", "Duration", "Actions"].map(
-                          (h) => (
+                ) : !users || users.length === 0 ? (
+                  <div
+                    className="p-10 text-center"
+                    data-ocid="admin.users.empty_state"
+                  >
+                    <Users className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                    <p className="text-muted-foreground font-body text-sm">
+                      No users registered yet
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-[500px]">
+                    <Table data-ocid="admin.users.table">
+                      <TableHeader>
+                        <TableRow className="border-border hover:bg-transparent">
+                          {[
+                            "Name",
+                            "Phone",
+                            "Email",
+                            "Balance",
+                            "Paid",
+                            "Status",
+                            "Actions",
+                          ].map((h) => (
                             <TableHead
                               key={h}
-                              className="text-muted-foreground font-ui text-xs uppercase tracking-wide"
+                              className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
                             >
                               {h}
                             </TableHead>
-                          ),
-                        )}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {videos.map((video, i) => {
-                        const ocidIndex = i + 1;
-                        const durationSec = Number(video.duration);
-                        const mins = Math.floor(durationSec / 60);
-                        return (
-                          <TableRow
-                            key={video.id.toString()}
-                            className="border-border hover:bg-muted/20 transition-colors"
-                            data-ocid={`admin.videos.item.${ocidIndex}`}
-                          >
-                            <TableCell className="py-3 font-ui font-medium text-sm text-foreground max-w-[200px]">
-                              <span className="truncate block">
-                                {video.title}
-                              </span>
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <Badge
-                                variant="outline"
-                                className="text-xs border-primary/30 text-primary"
-                              >
-                                {video.category}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="py-3 text-sm text-muted-foreground font-body">
-                              {mins}m {durationSec % 60}s
-                            </TableCell>
-                            <TableCell className="py-3">
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() =>
-                                  handleDeleteVideo(video.id, video.title)
-                                }
-                                disabled={deleteVideoMutation.isPending}
-                                className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
-                                data-ocid={`admin.videos.delete_button.${ocidIndex}`}
-                              >
-                                {deleteVideoMutation.isPending ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {users.map((user, i) => {
+                          const ocidIndex = i + 1;
+                          return (
+                            <TableRow
+                              key={user.id.toString()}
+                              className="border-border hover:bg-muted/20 transition-colors"
+                              data-ocid={`admin.users.item.${ocidIndex}`}
+                            >
+                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
+                                {user.name}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                                {user.phone || "—"}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                                {user.email || "—"}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm font-display font-bold text-green-400">
+                                ₹{(Number(user.walletBalance) / 100).toFixed(2)}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                {user.isPaid ? (
+                                  <CheckCircle className="w-4 h-4 text-green-400" />
                                 ) : (
-                                  <Trash2 className="w-4 h-4" />
+                                  <XCircle className="w-4 h-4 text-red-400" />
                                 )}
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </ScrollArea>
-              )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    user.isActive
+                                      ? "border-green-500/30 text-green-300 bg-green-500/10 text-xs"
+                                      : "border-red-500/30 text-red-300 bg-red-500/10 text-xs"
+                                  }
+                                >
+                                  {user.isActive ? "Active" : "Inactive"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <Switch
+                                    checked={user.isActive}
+                                    onCheckedChange={() =>
+                                      handleToggleUserStatus(
+                                        user.id,
+                                        user.isActive,
+                                      )
+                                    }
+                                    disabled={
+                                      updateUserStatusMutation.isPending
+                                    }
+                                    data-ocid={`admin.users.switch.${ocidIndex}`}
+                                  />
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => handleOpenEditUser(user)}
+                                    className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-8 h-8"
+                                    data-ocid={`admin.users.edit_button.${ocidIndex}`}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setDeleteUserId(user.id);
+                                      setDeleteUserName(user.name);
+                                    }}
+                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
+                                    data-ocid={`admin.users.delete_button.${ocidIndex}`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* ── STATS TAB ── */}
-        <TabsContent value="stats">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {[
-              {
-                label: "Total Users",
-                value: totalUsers,
-                color: "text-blue-400",
-                bgColor: "bg-blue-500/15",
-                icon: Users,
-              },
-              {
-                label: "Paid Members",
-                value: paidUsers,
-                color: "text-green-400",
-                bgColor: "bg-green-500/15",
-                icon: CheckCircle,
-              },
-              {
-                label: "Active Users",
-                value: activeUsers,
-                color: "text-primary",
-                bgColor: "bg-primary/15",
-                icon: Users,
-              },
-              {
-                label: "Total Wallet (₹)",
-                value: `₹${totalWallet.toFixed(2)}`,
-                color: "text-gradient-gold",
-                bgColor: "bg-primary/15",
-                icon: BarChart3,
-              },
-            ].map((stat, i) => (
+            {/* ── Edit User Dialog ── */}
+            <Dialog open={editOpen} onOpenChange={setEditOpen}>
+              <DialogContent
+                className="bg-card border-border max-w-md"
+                data-ocid="admin.users.edit.dialog"
+              >
+                <DialogHeader>
+                  <DialogTitle className="font-display font-bold text-foreground">
+                    Edit User
+                  </DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4 py-2">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editName" className="font-ui text-sm">
+                      Full Name
+                    </Label>
+                    <Input
+                      id="editName"
+                      value={editForm.name}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          name: e.target.value,
+                        }))
+                      }
+                      placeholder="Full name"
+                      className="bg-input border-border font-body"
+                      data-ocid="admin.users.edit.input"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editEmail" className="font-ui text-sm">
+                      Email
+                    </Label>
+                    <Input
+                      id="editEmail"
+                      type="email"
+                      value={editForm.email}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          email: e.target.value,
+                        }))
+                      }
+                      placeholder="Email address"
+                      className="bg-input border-border font-body"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="editPhone" className="font-ui text-sm">
+                      Phone
+                    </Label>
+                    <Input
+                      id="editPhone"
+                      type="tel"
+                      value={editForm.phone}
+                      onChange={(e) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          phone: e.target.value,
+                        }))
+                      }
+                      placeholder="Phone number"
+                      className="bg-input border-border font-body"
+                    />
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <Label htmlFor="editActive" className="font-ui text-sm">
+                      Active Status
+                    </Label>
+                    <Switch
+                      id="editActive"
+                      checked={editForm.isActive}
+                      onCheckedChange={(checked) =>
+                        setEditForm((prev) => ({
+                          ...prev,
+                          isActive: checked,
+                        }))
+                      }
+                    />
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button
+                    variant="outline"
+                    onClick={() => setEditOpen(false)}
+                    className="border-border font-ui"
+                    data-ocid="admin.users.edit.cancel_button"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveEditUser}
+                    disabled={updateUserMutation.isPending}
+                    className="bg-primary text-primary-foreground font-ui"
+                    data-ocid="admin.users.edit.save_button"
+                  >
+                    {updateUserMutation.isPending ? (
+                      <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                    ) : null}
+                    {updateUserMutation.isPending
+                      ? "Saving..."
+                      : "Save Changes"}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
+
+            {/* ── Delete User AlertDialog ── */}
+            <AlertDialog
+              open={deleteUserId !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setDeleteUserId(null);
+                  setDeleteUserName("");
+                }
+              }}
+            >
+              <AlertDialogContent
+                className="bg-card border-border"
+                data-ocid="admin.users.delete.dialog"
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="font-display font-bold text-foreground">
+                    Delete User
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="font-body text-muted-foreground">
+                    Are you sure you want to permanently delete{" "}
+                    <span className="font-semibold text-foreground">
+                      "{deleteUserName}"
+                    </span>
+                    ? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    className="font-ui border-border"
+                    data-ocid="admin.users.delete.cancel_button"
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleConfirmDeleteUser}
+                    disabled={deleteUserMutation.isPending}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-ui"
+                    data-ocid="admin.users.delete.confirm_button"
+                  >
+                    {deleteUserMutation.isPending ? (
+                      <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                    ) : null}
+                    {deleteUserMutation.isPending
+                      ? "Deleting..."
+                      : "Delete User"}
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          </TabsContent>
+
+          {/* ── PAYMENTS TAB ── */}
+          <TabsContent value="payments" data-ocid="admin.payments.panel">
+            <Card className="card-premium">
+              <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+                    <Receipt className="w-5 h-5 text-primary" />
+                    Payment Submissions
+                  </CardTitle>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Review and verify user payment proof submissions
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-border font-ui text-xs flex-shrink-0"
+                  onClick={() => {
+                    void refetchPayments();
+                    void refetchUsers();
+                    toast.success("Refreshed payment data");
+                  }}
+                  disabled={paymentsLoading}
+                  data-ocid="admin.payments.refresh.button"
+                >
+                  {paymentsLoading ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+                  ) : (
+                    <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                  )}
+                  Refresh
+                </Button>
+              </CardHeader>
+              <CardContent className="p-0">
+                {paymentsLoading ? (
+                  <div
+                    className="p-5 space-y-3"
+                    data-ocid="admin.payments.loading_state"
+                  >
+                    {["s1", "s2", "s3", "s4"].map((k) => (
+                      <Skeleton key={k} className="h-12 rounded-lg" />
+                    ))}
+                  </div>
+                ) : !paymentSubmissions || paymentSubmissions.length === 0 ? (
+                  <div
+                    className="p-10 text-center"
+                    data-ocid="admin.payments.empty_state"
+                  >
+                    <Receipt className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                    <p className="text-muted-foreground font-body text-sm">
+                      No payment submissions yet. Click Refresh to reload.
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-[560px]">
+                    <Table data-ocid="admin.payments.table">
+                      <TableHeader>
+                        <TableRow className="border-border hover:bg-transparent">
+                          {[
+                            "Name",
+                            "Phone",
+                            "Amount",
+                            "UTR / Transaction ID",
+                            "Status",
+                            "Submitted At",
+                            "Actions",
+                          ].map((h) => (
+                            <TableHead
+                              key={h}
+                              className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
+                            >
+                              {h}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {paymentSubmissions.map((submission, i) => {
+                          const ocidIndex = i + 1;
+                          const submittedAt = new Date(
+                            Number(submission.timestamp / BigInt(1_000_000)),
+                          ).toLocaleString("en-IN", {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          });
+                          const statusStr = String(submission.status);
+                          const isPending = statusStr === "pending";
+                          return (
+                            <TableRow
+                              key={submission.id.toString()}
+                              className="border-border hover:bg-muted/20 transition-colors"
+                              data-ocid={`admin.payments.item.${ocidIndex}`}
+                            >
+                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
+                                {submission.name}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                                {submission.phone}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm font-display font-bold text-green-400 whitespace-nowrap">
+                                ₹{submission.amount}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <span className="font-mono text-xs text-primary bg-primary/10 px-2 py-0.5 rounded">
+                                  {submission.utr}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <Badge
+                                  variant="outline"
+                                  className={
+                                    statusStr === "approved"
+                                      ? "border-green-500/30 text-green-300 bg-green-500/10 text-xs"
+                                      : statusStr === "rejected"
+                                        ? "border-red-500/30 text-red-300 bg-red-500/10 text-xs"
+                                        : "border-amber-500/30 text-amber-300 bg-amber-500/10 text-xs"
+                                  }
+                                >
+                                  {statusStr === "approved" && (
+                                    <CheckCircle className="w-3 h-3 mr-1" />
+                                  )}
+                                  {statusStr === "rejected" && (
+                                    <XCircle className="w-3 h-3 mr-1" />
+                                  )}
+                                  {statusStr.charAt(0).toUpperCase() +
+                                    statusStr.slice(1)}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-3 text-xs text-muted-foreground font-body whitespace-nowrap">
+                                {submittedAt}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                {isPending ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <Button
+                                      size="sm"
+                                      onClick={async () => {
+                                        try {
+                                          await verifyPaymentMutation.mutateAsync(
+                                            {
+                                              submissionId: submission.id,
+                                              action: "approve",
+                                            },
+                                          );
+                                          toast.success(
+                                            `Payment approved for ${submission.name}`,
+                                          );
+                                        } catch (err) {
+                                          const msg =
+                                            err instanceof Error
+                                              ? err.message
+                                              : "Failed to approve";
+                                          toast.error(msg);
+                                        }
+                                      }}
+                                      disabled={verifyPaymentMutation.isPending}
+                                      className="bg-green-600 hover:bg-green-700 text-white font-ui text-xs h-7 px-2.5"
+                                      data-ocid={`admin.payments.confirm_button.${ocidIndex}`}
+                                    >
+                                      {verifyPaymentMutation.isPending ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                      )}
+                                      Approve
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      onClick={async () => {
+                                        try {
+                                          await verifyPaymentMutation.mutateAsync(
+                                            {
+                                              submissionId: submission.id,
+                                              action: "reject",
+                                            },
+                                          );
+                                          toast.success(
+                                            `Payment rejected for ${submission.name}`,
+                                          );
+                                        } catch (err) {
+                                          const msg =
+                                            err instanceof Error
+                                              ? err.message
+                                              : "Failed to reject";
+                                          toast.error(msg);
+                                        }
+                                      }}
+                                      disabled={verifyPaymentMutation.isPending}
+                                      className="border-red-500/30 text-red-400 hover:bg-red-500/10 font-ui text-xs h-7 px-2.5"
+                                      data-ocid={`admin.payments.delete_button.${ocidIndex}`}
+                                    >
+                                      {verifyPaymentMutation.isPending ? (
+                                        <Loader2 className="w-3 h-3 animate-spin" />
+                                      ) : (
+                                        <XCircle className="w-3 h-3 mr-1" />
+                                      )}
+                                      Reject
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground font-body italic">
+                                    Resolved
+                                  </span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── VIDEOS TAB ── */}
+          <TabsContent value="videos">
+            <Card className="card-premium">
+              <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                <CardTitle className="font-display font-bold text-lg text-foreground">
+                  All Videos
+                </CardTitle>
+                <Dialog open={addVideoOpen} onOpenChange={setAddVideoOpen}>
+                  <DialogTrigger asChild>
+                    <Button
+                      size="sm"
+                      className="bg-primary text-primary-foreground hover:opacity-90 font-ui"
+                      data-ocid="admin.videos.open_modal_button"
+                    >
+                      <Plus className="w-4 h-4 mr-1.5" />
+                      Add Video
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent
+                    className="bg-card border-border max-w-lg"
+                    data-ocid="admin.videos.dialog"
+                  >
+                    <DialogHeader>
+                      <DialogTitle className="font-display font-bold text-foreground">
+                        Add New Video
+                      </DialogTitle>
+                    </DialogHeader>
+                    <div className="space-y-4 py-2">
+                      {formError && (
+                        <Alert
+                          variant="destructive"
+                          data-ocid="admin.videos.form.error_state"
+                        >
+                          <AlertCircle className="w-4 h-4" />
+                          <AlertDescription className="font-body text-sm">
+                            {formError}
+                          </AlertDescription>
+                        </Alert>
+                      )}
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vTitle" className="font-ui text-sm">
+                          Title *
+                        </Label>
+                        <Input
+                          id="vTitle"
+                          name="title"
+                          value={videoForm.title}
+                          onChange={handleVideoFormChange}
+                          placeholder="Enter video title"
+                          className="bg-input border-border font-body"
+                          data-ocid="admin.videos.title.input"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vCategory" className="font-ui text-sm">
+                          Category *
+                        </Label>
+                        <Select
+                          value={videoForm.category}
+                          onValueChange={(v) =>
+                            setVideoForm((prev) => ({ ...prev, category: v }))
+                          }
+                        >
+                          <SelectTrigger
+                            id="vCategory"
+                            className="bg-input border-border font-body"
+                            data-ocid="admin.videos.category.select"
+                          >
+                            <SelectValue placeholder="Select category" />
+                          </SelectTrigger>
+                          <SelectContent className="bg-popover border-border">
+                            {VIDEO_CATEGORIES.map((cat) => (
+                              <SelectItem
+                                key={cat}
+                                value={cat}
+                                className="font-ui text-sm"
+                              >
+                                {cat}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vUrl" className="font-ui text-sm">
+                          Video URL *
+                        </Label>
+                        <Input
+                          id="vUrl"
+                          name="url"
+                          value={videoForm.url}
+                          onChange={handleVideoFormChange}
+                          placeholder="https://youtube.com/embed/..."
+                          className="bg-input border-border font-body"
+                          data-ocid="admin.videos.url.input"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vDesc" className="font-ui text-sm">
+                          Description
+                        </Label>
+                        <Textarea
+                          id="vDesc"
+                          name="description"
+                          value={videoForm.description}
+                          onChange={handleVideoFormChange}
+                          placeholder="Enter video description"
+                          className="bg-input border-border font-body resize-none"
+                          rows={3}
+                          data-ocid="admin.videos.description.textarea"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label htmlFor="vDuration" className="font-ui text-sm">
+                          Duration (seconds) *
+                        </Label>
+                        <Input
+                          id="vDuration"
+                          name="duration"
+                          type="number"
+                          value={videoForm.duration}
+                          onChange={handleVideoFormChange}
+                          placeholder="e.g. 1800 for 30 minutes"
+                          className="bg-input border-border font-body"
+                          data-ocid="admin.videos.duration.input"
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button
+                        variant="outline"
+                        onClick={() => setAddVideoOpen(false)}
+                        className="border-border font-ui"
+                        data-ocid="admin.videos.cancel.button"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleAddVideo}
+                        disabled={addVideoMutation.isPending}
+                        className="bg-primary text-primary-foreground font-ui"
+                        data-ocid="admin.videos.submit.button"
+                      >
+                        {addVideoMutation.isPending ? (
+                          <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                        ) : null}
+                        {addVideoMutation.isPending ? "Adding..." : "Add Video"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </CardHeader>
+              <CardContent className="p-0">
+                {videosLoading ? (
+                  <div
+                    className="p-5 space-y-3"
+                    data-ocid="admin.videos.loading_state"
+                  >
+                    {["s1", "s2", "s3", "s4"].map((k) => (
+                      <Skeleton key={k} className="h-12 rounded-lg" />
+                    ))}
+                  </div>
+                ) : !videos || videos.length === 0 ? (
+                  <div
+                    className="p-10 text-center"
+                    data-ocid="admin.videos.empty_state"
+                  >
+                    <PlayCircle className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                    <p className="text-muted-foreground font-body text-sm">
+                      No videos added yet. Click "Add Video" to get started.
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-[500px]">
+                    <Table data-ocid="admin.videos.table">
+                      <TableHeader>
+                        <TableRow className="border-border hover:bg-transparent">
+                          {["Title", "Category", "Duration", "Actions"].map(
+                            (h) => (
+                              <TableHead
+                                key={h}
+                                className="text-muted-foreground font-ui text-xs uppercase tracking-wide"
+                              >
+                                {h}
+                              </TableHead>
+                            ),
+                          )}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {videos.map((video, i) => {
+                          const ocidIndex = i + 1;
+                          const durationSec = Number(video.duration);
+                          const mins = Math.floor(durationSec / 60);
+                          return (
+                            <TableRow
+                              key={video.id.toString()}
+                              className="border-border hover:bg-muted/20 transition-colors"
+                              data-ocid={`admin.videos.item.${ocidIndex}`}
+                            >
+                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground max-w-[200px]">
+                                <span className="truncate block">
+                                  {video.title}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <Badge
+                                  variant="outline"
+                                  className="text-xs border-primary/30 text-primary"
+                                >
+                                  {video.category}
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                                {mins}m {durationSec % 60}s
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  onClick={() =>
+                                    handleDeleteVideo(video.id, video.title)
+                                  }
+                                  disabled={deleteVideoMutation.isPending}
+                                  className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
+                                  data-ocid={`admin.videos.delete_button.${ocidIndex}`}
+                                >
+                                  {deleteVideoMutation.isPending ? (
+                                    <Loader2 className="w-4 h-4 animate-spin" />
+                                  ) : (
+                                    <Trash2 className="w-4 h-4" />
+                                  )}
+                                </Button>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* ── STATS TAB ── */}
+          <TabsContent value="stats">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              {[
+                {
+                  label: "Total Users",
+                  value: totalUsers,
+                  color: "text-blue-400",
+                  bgColor: "bg-blue-500/15",
+                  icon: Users,
+                },
+                {
+                  label: "Paid Members",
+                  value: paidUsers,
+                  color: "text-green-400",
+                  bgColor: "bg-green-500/15",
+                  icon: CheckCircle,
+                },
+                {
+                  label: "Pending Payments",
+                  value: pendingPayments,
+                  color: "text-amber-400",
+                  bgColor: "bg-amber-500/15",
+                  icon: Receipt,
+                },
+                {
+                  label: "Total Videos",
+                  value: videos?.length ?? 0,
+                  color: "text-primary",
+                  bgColor: "bg-primary/15",
+                  icon: PlayCircle,
+                },
+              ].map((stat, i) => (
+                <motion.div
+                  key={stat.label}
+                  initial={{ opacity: 0, y: 16 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.3, delay: i * 0.07 }}
+                >
+                  <Card
+                    className="card-premium"
+                    data-ocid={`admin.stats.card.${i + 1}`}
+                  >
+                    <CardContent className="p-5">
+                      <div
+                        className={`w-10 h-10 rounded-xl ${stat.bgColor} flex items-center justify-center mb-3`}
+                      >
+                        <stat.icon className={`w-5 h-5 ${stat.color}`} />
+                      </div>
+                      <div
+                        className={`font-display font-black text-3xl ${stat.color}`}
+                      >
+                        {stat.value}
+                      </div>
+                      <div className="text-muted-foreground text-xs font-ui mt-1">
+                        {stat.label}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Summary info */}
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Card className="card-premium">
+                <CardContent className="p-5">
+                  <h3 className="font-ui text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                    User Breakdown
+                  </h3>
+                  <div className="space-y-2.5">
+                    {[
+                      { label: "Total Registered", value: totalUsers },
+                      { label: "Paid Members", value: paidUsers },
+                      {
+                        label: "Active Users",
+                        value: activeUsers,
+                      },
+                      {
+                        label: "Unpaid Users",
+                        value: totalUsers - paidUsers,
+                      },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        className="flex justify-between items-center text-sm"
+                      >
+                        <span className="text-muted-foreground font-body">
+                          {row.label}
+                        </span>
+                        <span className="font-display font-bold text-foreground">
+                          {row.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card className="card-premium">
+                <CardContent className="p-5">
+                  <h3 className="font-ui text-sm font-semibold text-muted-foreground mb-3 uppercase tracking-wide">
+                    Payment Overview
+                  </h3>
+                  <div className="space-y-2.5">
+                    {[
+                      {
+                        label: "Total Submissions",
+                        value: paymentSubmissions?.length ?? 0,
+                      },
+                      {
+                        label: "Pending",
+                        value: pendingPayments,
+                      },
+                      {
+                        label: "Approved",
+                        value:
+                          paymentSubmissions?.filter(
+                            (p) => String(p.status) === "approved",
+                          ).length ?? 0,
+                      },
+                      {
+                        label: "Rejected",
+                        value:
+                          paymentSubmissions?.filter(
+                            (p) => String(p.status) === "rejected",
+                          ).length ?? 0,
+                      },
+                    ].map((row) => (
+                      <div
+                        key={row.label}
+                        className="flex justify-between items-center text-sm"
+                      >
+                        <span className="text-muted-foreground font-body">
+                          {row.label}
+                        </span>
+                        <span className="font-display font-bold text-foreground">
+                          {row.value}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Unpaid alert */}
+            {totalUsers > 0 && totalUsers - paidUsers > 0 && (
               <motion.div
-                key={stat.label}
                 initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3, delay: i * 0.07 }}
+                transition={{ delay: 0.3 }}
+                className="mt-4"
               >
-                <Card
-                  className="card-premium"
-                  data-ocid={`admin.stats.card.${i + 1}`}
-                >
-                  <CardContent className="p-5">
-                    <div
-                      className={`w-10 h-10 rounded-xl ${stat.bgColor} flex items-center justify-center mb-3`}
-                    >
-                      <stat.icon className={`w-5 h-5 ${stat.color}`} />
-                    </div>
-                    <div
-                      className={`font-display font-black text-3xl ${
-                        stat.label === "Total Wallet (₹)"
-                          ? "text-gradient-gold"
-                          : stat.color
-                      }`}
-                    >
-                      {stat.value}
-                    </div>
-                    <div className="text-muted-foreground text-xs font-ui mt-1">
-                      {stat.label}
-                    </div>
-                  </CardContent>
-                </Card>
+                <Alert className="border-amber-500/30 bg-amber-500/10">
+                  <AlertCircle className="w-4 h-4 text-amber-400" />
+                  <AlertDescription className="font-body text-sm text-foreground/80">
+                    {totalUsers - paidUsers} user(s) have registered but not
+                    completed payment.
+                  </AlertDescription>
+                </Alert>
               </motion.div>
-            ))}
-          </div>
-
-          {/* Unpaid users alert */}
-          {totalUsers > 0 && totalUsers - paidUsers > 0 && (
-            <motion.div
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="mt-4"
-            >
-              <Alert className="border-amber/30 bg-amber/10">
-                <AlertCircle className="w-4 h-4 text-amber" />
-                <AlertDescription className="font-body text-sm text-foreground/80">
-                  {totalUsers - paidUsers} user(s) have registered but not
-                  completed payment.
-                </AlertDescription>
-              </Alert>
-            </motion.div>
-          )}
-        </TabsContent>
-      </Tabs>
-    </div>
+            )}
+          </TabsContent>
+        </Tabs>
+      </motion.div>
+    </AnimatePresence>
   );
 }

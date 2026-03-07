@@ -13,6 +13,30 @@ import { useActor } from "./useActor";
 
 // ─── User ────────────────────────────────────────────────────────────────────
 
+export function useUserByPhone(phone: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<User | null>({
+    queryKey: ["userByPhone", phone],
+    queryFn: async () => {
+      if (!actor || !phone) return null;
+      return actor.getUserByPhone(phone);
+    },
+    enabled: !!actor && !isFetching && !!phone,
+  });
+}
+
+export function useReferralTreeByCode(referralCode: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<ReferralNode | null>({
+    queryKey: ["referralTreeByCode", referralCode],
+    queryFn: async () => {
+      if (!actor || !referralCode) return null;
+      return actor.getReferralTreeByCode(referralCode);
+    },
+    enabled: !!actor && !isFetching && !!referralCode,
+  });
+}
+
 export function useCallerUserProfile() {
   const { actor, isFetching } = useActor();
   return useQuery<UserProfile | null>({
@@ -114,10 +138,27 @@ export function useWatchHistory(userId: bigint | null) {
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
 
-export function useAllUsers() {
+export function useAllUsers(isAdminReady = false) {
   const { actor, isFetching } = useActor();
   return useQuery<User[]>({
     queryKey: ["allUsers"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getAllUsers();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && isAdminReady,
+  });
+}
+
+// Public version for phone-based login -- no admin gate
+export function useAllUsersPublic() {
+  const { actor, isFetching } = useActor();
+  return useQuery<User[]>({
+    queryKey: ["allUsersPublic"],
     queryFn: async () => {
       if (!actor) return [];
       return actor.getAllUsers();
@@ -126,15 +167,19 @@ export function useAllUsers() {
   });
 }
 
-export function useAllPaymentSubmissions() {
+export function useAllPaymentSubmissions(isAdminReady = false) {
   const { actor, isFetching } = useActor();
   return useQuery<PaymentSubmission[]>({
     queryKey: ["allPaymentSubmissions"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getAllPaymentSubmissions();
+      try {
+        return await actor.getAllPaymentSubmissions();
+      } catch {
+        return [];
+      }
     },
-    enabled: !!actor && !isFetching,
+    enabled: !!actor && !isFetching && isAdminReady,
   });
 }
 
@@ -159,6 +204,21 @@ export function useClaimFirstAdminMutation() {
     mutationFn: async () => {
       if (!actor) throw new Error("Not connected");
       await actor.claimFirstAdmin();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
+      queryClient.invalidateQueries({ queryKey: ["isAdminAssigned"] });
+    },
+  });
+}
+
+export function useForceSetAdminMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (principalText: string) => {
+      if (!actor) throw new Error("Not connected");
+      return actor.forceSetAdmin(principalText);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["isAdmin"] });
@@ -213,12 +273,14 @@ export function useSubmitPaymentProofMutation() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (input: PaymentSubmissionInput): Promise<bigint> => {
-      if (!actor) throw new Error("Not connected");
+      if (!actor)
+        throw new Error("Not connected. Please refresh and try again.");
       return actor.submitPaymentProof(input);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["callerUserProfile"] });
       queryClient.invalidateQueries({ queryKey: ["myProfile"] });
+      queryClient.invalidateQueries({ queryKey: ["myPaymentSubmissions"] });
     },
   });
 }

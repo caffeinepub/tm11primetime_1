@@ -88,6 +88,7 @@ export interface backendInterface {
     claimFirstAdmin(): Promise<void>;
     deleteUser(userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
+    forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
@@ -97,7 +98,14 @@ export interface backendInterface {
     getMyProfile(userId: bigint): Promise<User>;
     getMyWatchHistory(): Promise<Array<WatchRecord>>;
     getReferralTree(userId: bigint): Promise<ReferralNode>;
+    getReferralTreeByCode(referralCode: string): Promise<{
+        id: bigint;
+        referralCode: string;
+        name: string;
+        children: Array<ReferralNode>;
+    }>;
     getTransactions(): Promise<Array<Transaction>>;
+    getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
     isAdminAssigned(): Promise<boolean>;

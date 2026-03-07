@@ -98,6 +98,7 @@ export const idlService = IDL.Service({
   'claimFirstAdmin' : IDL.Func([], [], []),
   'deleteUser' : IDL.Func([IDL.Nat], [], []),
   'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+  'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
   'getAllPaymentSubmissions' : IDL.Func(
       [],
       [IDL.Vec(PaymentSubmission)],
@@ -115,7 +116,20 @@ export const idlService = IDL.Service({
   'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
   'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
   'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
+  'getReferralTreeByCode' : IDL.Func(
+      [IDL.Text],
+      [
+        IDL.Record({
+          'id' : IDL.Nat,
+          'referralCode' : IDL.Text,
+          'name' : IDL.Text,
+          'children' : IDL.Vec(ReferralNode),
+        }),
+      ],
+      ['query'],
+    ),
   'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
+  'getUserByPhone' : IDL.Func([IDL.Text], [IDL.Opt(User)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
@@ -234,6 +248,7 @@ export const idlFactory = ({ IDL }) => {
     'claimFirstAdmin' : IDL.Func([], [], []),
     'deleteUser' : IDL.Func([IDL.Nat], [], []),
     'deleteVideo' : IDL.Func([IDL.Nat], [], []),
+    'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
     'getAllPaymentSubmissions' : IDL.Func(
         [],
         [IDL.Vec(PaymentSubmission)],
@@ -251,7 +266,20 @@ export const idlFactory = ({ IDL }) => {
     'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
     'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
     'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
+    'getReferralTreeByCode' : IDL.Func(
+        [IDL.Text],
+        [
+          IDL.Record({
+            'id' : IDL.Nat,
+            'referralCode' : IDL.Text,
+            'name' : IDL.Text,
+            'children' : IDL.Vec(ReferralNode),
+          }),
+        ],
+        ['query'],
+      ),
     'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
+    'getUserByPhone' : IDL.Func([IDL.Text], [IDL.Opt(User)], ['query']),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],

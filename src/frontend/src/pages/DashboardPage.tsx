@@ -22,11 +22,8 @@ import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { ReferralNode } from "../backend.d";
-import {
-  useCallerUserProfile,
-  useMyProfile,
-  useReferralTree,
-} from "../hooks/useQueries";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import { useReferralTreeByCode, useUserByPhone } from "../hooks/useQueries";
 
 // ─── Tree Node Component ──────────────────────────────────────────────────────
 
@@ -136,15 +133,16 @@ export default function DashboardPage() {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
 
-  const { data: callerProfile, isLoading: profileLoading } =
-    useCallerUserProfile();
-  const userId = callerProfile?.userId ?? null;
+  const phoneAuth = usePhoneAuth();
 
-  const { data: userProfile, isLoading: userLoading } = useMyProfile(userId);
-  const { data: referralTree, isLoading: treeLoading } =
-    useReferralTree(userId);
+  const { data: userProfile, isLoading: userLoading } = useUserByPhone(
+    phoneAuth.phone,
+  );
+  const { data: referralTree, isLoading: treeLoading } = useReferralTreeByCode(
+    userProfile?.referralCode ?? null,
+  );
 
-  const isLoading = profileLoading || userLoading;
+  const isLoading = userLoading;
 
   const walletBalance = userProfile?.walletBalance ?? BigInt(0);
   const walletRs = Number(walletBalance) / 100;
@@ -194,7 +192,7 @@ export default function DashboardPage() {
     );
   }
 
-  if (!callerProfile && !profileLoading) {
+  if (!phoneAuth.isLoggedIn) {
     return (
       <div className="p-6 flex items-center justify-center min-h-[60vh]">
         <div className="text-center space-y-4 max-w-sm">
@@ -230,7 +228,7 @@ export default function DashboardPage() {
         <h1 className="font-display font-black text-2xl text-foreground">
           Welcome back,{" "}
           <span className="text-gradient-gold">
-            {userProfile?.name ?? callerProfile?.name ?? "Member"}
+            {userProfile?.name ?? phoneAuth.userName ?? "Member"}
           </span>
           !
         </h1>

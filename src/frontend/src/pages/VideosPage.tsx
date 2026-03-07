@@ -20,11 +20,8 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import type { Video, WatchRecord } from "../backend.d";
-import {
-  useCallerUserProfile,
-  useVideosByCategory,
-  useWatchHistory,
-} from "../hooks/useQueries";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import { useVideosByCategory, useWatchHistory } from "../hooks/useQueries";
 
 const CATEGORIES = [
   { value: "All", label: "All", icon: Play },
@@ -224,8 +221,8 @@ export default function VideosPage() {
   const [activeCategory, setActiveCategory] = useState("All");
   const [searchQuery, setSearchQuery] = useState("");
 
-  const { data: callerProfile } = useCallerUserProfile();
-  const userId = callerProfile?.userId ?? null;
+  const phoneAuth = usePhoneAuth();
+  const userId = phoneAuth.userId;
 
   const { data: videos, isLoading } = useVideosByCategory(activeCategory);
   const { data: watchHistory } = useWatchHistory(userId);

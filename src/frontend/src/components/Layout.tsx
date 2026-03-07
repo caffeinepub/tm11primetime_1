@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ChevronRight,
   CreditCard,
@@ -10,11 +10,10 @@ import {
   PlayCircle,
   ShieldCheck,
   Wallet,
-  X,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useState } from "react";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
 interface NavItem {
   label: string;
@@ -38,11 +37,17 @@ interface LayoutProps {
 export function Layout({ children }: LayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const location = useLocation();
-  const { clear, identity } = useInternetIdentity();
+  const navigate = useNavigate();
+  const phoneAuth = usePhoneAuth();
   const visibleNavItems = navItems.filter((item) => !item.adminOnly || true);
 
   const isActive = (href: string) =>
     location.pathname === href || location.pathname.startsWith(`${href}/`);
+
+  const handleLogout = () => {
+    phoneAuth.logout();
+    navigate({ to: "/" });
+  };
 
   const SidebarContent = () => (
     <div className="flex flex-col h-full">
@@ -95,12 +100,22 @@ export function Layout({ children }: LayoutProps) {
       </nav>
 
       {/* User / Logout */}
-      {identity && (
-        <div className="px-3 py-4 border-t border-sidebar-border">
+      {phoneAuth.isLoggedIn && (
+        <div className="px-3 py-4 border-t border-sidebar-border space-y-2">
+          {phoneAuth.userName && (
+            <p className="px-3 text-xs text-muted-foreground font-ui truncate">
+              👤 {phoneAuth.userName}
+            </p>
+          )}
+          {phoneAuth.phone && (
+            <p className="px-3 text-xs text-muted-foreground font-ui truncate">
+              📱 {phoneAuth.phone}
+            </p>
+          )}
           <Button
             variant="ghost"
             size="sm"
-            onClick={clear}
+            onClick={handleLogout}
             data-ocid="nav.logout.button"
             className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive hover:bg-destructive/10 font-ui"
           >
@@ -159,11 +174,11 @@ export function Layout({ children }: LayoutProps) {
           <span className="font-display font-bold text-base text-gradient-gold">
             Tm11primeTime
           </span>
-          {identity && (
+          {phoneAuth.isLoggedIn && (
             <Button
               variant="ghost"
               size="icon"
-              onClick={clear}
+              onClick={handleLogout}
               className="ml-auto text-muted-foreground"
               data-ocid="nav.mobile.logout.button"
             >

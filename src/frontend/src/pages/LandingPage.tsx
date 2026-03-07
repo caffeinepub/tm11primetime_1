@@ -1,19 +1,24 @@
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useNavigate } from "@tanstack/react-router";
 import {
+  AlertCircle,
   ArrowRight,
   Crown,
   Loader2,
+  Phone,
   Play,
   Shield,
   Star,
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useEffect } from "react";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
-import { useCallerUserProfile, useMyProfile } from "../hooks/useQueries";
+import { useState } from "react";
+import { useActor } from "../hooks/useActor";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
 const LEVEL_EARNINGS = [
   { level: 1, amount: "₹10" },
@@ -51,63 +56,59 @@ const features = [
 
 export default function LandingPage() {
   const navigate = useNavigate();
-  const { login, isLoggingIn, isInitializing, identity } =
-    useInternetIdentity();
+  const phoneAuth = usePhoneAuth();
+  const { actor, isFetching: actorFetching } = useActor();
 
-  // Fetch profile data to decide where to redirect logged-in users
-  const { data: userProfile, isLoading: profileLoading } =
-    useCallerUserProfile();
-  const { data: myProfile, isLoading: myProfileLoading } = useMyProfile(
-    userProfile?.userId ?? null,
-  );
+  const [phone, setPhone] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const isCheckingProfile =
-    !!identity && (profileLoading || (userProfile != null && myProfileLoading));
-
-  // Once we have identity and profile data, decide redirect destination
-  useEffect(() => {
-    if (!identity) return;
-    // Still loading profile info — wait
-    if (profileLoading) return;
-    // No profile → new user, stay on landing
-    if (userProfile == null) return;
-    // Profile exists but still loading full user details
-    if (myProfileLoading) return;
-    // Has profile + full user data
-    if (myProfile?.isPaid) {
-      navigate({ to: "/dashboard" });
-    } else {
-      // Registered but not paid → send to payment page
-      navigate({ to: "/register" });
+  const handleLogin = async () => {
+    const trimmed = phone.trim();
+    if (!trimmed) {
+      setLoginError("Please enter your mobile number.");
+      return;
     }
-  }, [
-    identity,
-    profileLoading,
-    userProfile,
-    myProfileLoading,
-    myProfile,
-    navigate,
-  ]);
+    if (!actor || actorFetching) {
+      setLoginError(
+        "App is still loading. Please wait a moment and try again.",
+      );
+      return;
+    }
 
-  const handleLogin = () => {
-    if (identity) return; // redirect handled by useEffect
-    login();
+    try {
+      setLoginLoading(true);
+      setLoginError(null);
+
+      // Use the public getUserByPhone -- no admin access needed
+      const match = await actor.getUserByPhone(trimmed);
+
+      if (!match) {
+        // New user → go register
+        navigate({ to: "/register" });
+        return;
+      }
+
+      // Save session
+      phoneAuth.login(match.phone, match.id, match.name);
+
+      if (match.isPaid) {
+        navigate({ to: "/dashboard" });
+      } else {
+        navigate({ to: "/register" });
+      }
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Login failed. Please try again.";
+      setLoginError(msg);
+    } finally {
+      setLoginLoading(false);
+    }
   };
 
-  // Show full-screen loading spinner while checking profile after login
-  if (isCheckingProfile) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-gold animate-pulse-gold">
-          <Crown className="w-6 h-6 text-primary-foreground" />
-        </div>
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        <p className="text-muted-foreground font-ui text-sm">
-          Checking your account…
-        </p>
-      </div>
-    );
-  }
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleLogin();
+  };
 
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
@@ -151,6 +152,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
+            className="w-full max-w-2xl mx-auto"
           >
             <div className="inline-flex items-center gap-2 bg-primary/20 border border-primary/30 rounded-full px-4 py-1.5 mb-6">
               <Star className="w-4 h-4 text-primary fill-primary" />
@@ -170,38 +172,80 @@ export default function LandingPage() {
               premium video content, and earn through 15 levels of referrals.
             </p>
 
-            {/* CTA Buttons */}
-            <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-              <Button
-                size="lg"
-                onClick={() => navigate({ to: "/register" })}
-                className="bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-lg px-8 py-6 glow-gold"
-                data-ocid="landing.join.primary_button"
-              >
-                Join Now — ₹118 only
-                <ArrowRight className="ml-2 w-5 h-5" />
-              </Button>
-              <Button
-                size="lg"
-                variant="outline"
-                onClick={handleLogin}
-                disabled={isLoggingIn || isInitializing}
-                className="border-border text-foreground hover:bg-secondary font-ui text-base px-8 py-6"
-                data-ocid="landing.login.button"
-              >
-                {isLoggingIn || isInitializing ? (
-                  <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                ) : null}
-                {isLoggingIn
-                  ? "Connecting..."
-                  : isInitializing
-                    ? "Loading..."
-                    : "Login"}
-              </Button>
-            </div>
+            {/* Phone Login Card */}
+            <Card className="card-premium mx-auto max-w-sm mb-8">
+              <CardContent className="p-5 space-y-4">
+                <div className="flex items-center gap-2 mb-1">
+                  <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
+                    <Phone className="w-4 h-4 text-primary" />
+                  </div>
+                  <span className="font-display font-bold text-base text-foreground">
+                    Login / Register
+                  </span>
+                </div>
+
+                {loginError && (
+                  <Alert
+                    variant="destructive"
+                    data-ocid="landing.login.error_state"
+                  >
+                    <AlertCircle className="w-4 h-4" />
+                    <AlertDescription className="font-body text-sm">
+                      {loginError}
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                <div className="space-y-1.5">
+                  <Label
+                    htmlFor="login-phone"
+                    className="font-ui text-sm text-foreground/80"
+                  >
+                    Mobile Number
+                  </Label>
+                  <div className="relative">
+                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
+                    <Input
+                      id="login-phone"
+                      type="tel"
+                      value={phone}
+                      onChange={(e) => {
+                        setPhone(e.target.value);
+                        setLoginError(null);
+                      }}
+                      onKeyDown={handleKeyDown}
+                      placeholder="+91 98765 43210"
+                      className="pl-9 h-11 bg-input border-border font-body border-primary/40 focus:border-primary"
+                      autoComplete="tel"
+                      data-ocid="landing.phone.input"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base glow-gold"
+                  onClick={handleLogin}
+                  disabled={loginLoading || actorFetching}
+                  data-ocid="landing.login.button"
+                >
+                  {loginLoading || actorFetching ? (
+                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                  ) : null}
+                  {loginLoading
+                    ? "Logging in..."
+                    : actorFetching
+                      ? "Loading..."
+                      : "Login / Register"}
+                </Button>
+
+                <p className="text-center text-xs text-muted-foreground font-body">
+                  New here? Enter your mobile number to register.
+                </p>
+              </CardContent>
+            </Card>
 
             {/* Stats */}
-            <div className="flex flex-wrap justify-center gap-8 mt-16">
+            <div className="flex flex-wrap justify-center gap-8">
               {[
                 { label: "Joining Bonus", value: "₹150" },
                 { label: "Membership Fee", value: "₹118" },

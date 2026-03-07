@@ -8,11 +8,13 @@ import Runtime "mo:core/Runtime";
 import Int "mo:core/Int";
 import Text "mo:core/Text";
 import Principal "mo:core/Principal";
+import Char "mo:core/Char";
+
 
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
-
+// Apply migration on upgrade
 
 actor {
   let accessControlState = AccessControl.initState();
@@ -123,6 +125,18 @@ actor {
     };
   };
 
+  // Helper function to normalize phone numbers (remove spaces, dashes, parentheses)
+  func normalizePhone(phone : Text) : Text {
+    let chars = phone.chars();
+    var result = "";
+    for (c in chars) {
+      if (c != ' ' and c != '-' and c != '(' and c != ')') {
+        result #= c.toText();
+      };
+    };
+    result;
+  };
+
   func generateReferralCode(userId : Nat) : Text {
     "REF" # userId.toText();
   };
@@ -148,7 +162,7 @@ actor {
       id = user.id;
       name = user.name;
       referralCode = user.referralCode;
-      children = if (level < 14) { childrenNodes } else { [] };
+      children = if (level < 15) { childrenNodes } else { [] };
     };
   };
 
@@ -156,16 +170,62 @@ actor {
     principalToUserId.get(caller);
   };
 
-  public shared ({ caller }) func register(name : Text, email : Text, phone : Text, referredBy : Text) : async Text {
-    // Allow any authenticated user to register (anonymous users are guests and can register)
-    if (caller.isAnonymous()) {
-      Runtime.trap("Anonymous users cannot register");
+  // New function: Get referral tree by code (no authentication required as specified)
+  public query func getReferralTreeByCode(referralCode : Text) : async {
+    id : Nat;
+    name : Text;
+    referralCode : Text;
+    children : [ReferralNode];
+  } {
+    let user = users.values().toArray().find(
+      func(u) {
+        Text.equal(u.referralCode, referralCode);
+      }
+    );
+
+    switch (user) {
+      case (null) {
+        {
+          id = 0;
+          name = "";
+          referralCode;
+          children = [];
+        };
+      };
+      case (?u) {
+        buildReferralTree(u.id, 0);
+      };
+    };
+  };
+
+  // USER-ONLY function - requires authentication to protect PII
+  public query ({ caller }) func getUserByPhone(phone : Text) : async ?User {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only authenticated users can lookup users by phone");
     };
 
-    // Check if user already registered
-    switch (getUserIdFromPrincipal(caller)) {
-      case (?_) { Runtime.trap("User already registered") };
+    let normalizedSearch = normalizePhone(phone);
+    users.values().toArray().find(
+      func(u) {
+        Text.equal(normalizePhone(u.phone), normalizedSearch);
+      }
+    );
+  };
+
+  // PUBLIC function - allows ALL callers (including anonymous) as specified
+  public shared ({ caller }) func register(name : Text, email : Text, phone : Text, referredBy : Text) : async Text {
+    // Check if phone number already exists
+    let normalizedPhone = normalizePhone(phone);
+    switch (users.values().toArray().find(func(u) { Text.equal(normalizePhone(u.phone), normalizedPhone) })) {
+      case (?_) { Runtime.trap("Phone number already registered") };
       case (null) {};
+    };
+
+    // If caller is not anonymous, check principalToUserId as before
+    if (not caller.isAnonymous()) {
+      if (getUserIdFromPrincipal(caller) != null) {
+        Runtime.trap("User already registered");
+      };
     };
 
     let userId = nextUserId;
@@ -188,58 +248,78 @@ actor {
     };
 
     users.add(userId, newUser);
-    principalToUserId.add(caller, userId);
 
-    let profile : UserProfile = {
-      userId;
-      name;
-      email;
-      phone;
+    // Only map principal to userId if caller is not anonymous
+    if (not caller.isAnonymous()) {
+      principalToUserId.add(caller, userId);
+      let profile : UserProfile = {
+        userId;
+        name;
+        email;
+        phone;
+      };
+      userProfiles.add(caller, profile);
+
+      // Directly assign user role in access control system
+      accessControlState.userRoles.add(caller, #user);
     };
-    userProfiles.add(caller, profile);
-
-    // Assign user role in access control system
-    AccessControl.assignRole(accessControlState, caller, caller, #user);
 
     referralCode;
   };
 
+  // PUBLIC function - no authentication required as specified
   public shared ({ caller }) func submitPaymentProof(input : PaymentSubmissionInput) : async Nat {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can submit payment proof");
+    let normalizedPhone = normalizePhone(input.phone);
+
+    let userOpt = users.values().toArray().find(
+      func(u) {
+        Text.equal(normalizePhone(u.phone), normalizedPhone);
+      }
+    );
+
+    switch (userOpt) {
+      case (null) {
+        let submission : PaymentSubmission = {
+          id = nextPaymentSubmissionId;
+          userId = 0;
+          name = input.name;
+          phone = input.phone;
+          utr = input.utr;
+          amount = input.amount;
+          timestamp = Time.now();
+          status = #pending;
+        };
+
+        paymentSubmissions.add(nextPaymentSubmissionId, submission);
+        nextPaymentSubmissionId += 1;
+
+        submission.id;
+      };
+      case (?user) {
+        if (user.isPaid) {
+          Runtime.trap("User has already paid");
+        };
+
+        let submission : PaymentSubmission = {
+          id = nextPaymentSubmissionId;
+          userId = user.id;
+          name = input.name;
+          phone = input.phone;
+          utr = input.utr;
+          amount = input.amount;
+          timestamp = Time.now();
+          status = #pending;
+        };
+
+        paymentSubmissions.add(nextPaymentSubmissionId, submission);
+        nextPaymentSubmissionId += 1;
+
+        submission.id;
+      };
     };
-
-    let userId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    if (user.isPaid) {
-      Runtime.trap("User has already paid");
-    };
-
-    let submission : PaymentSubmission = {
-      id = nextPaymentSubmissionId;
-      userId;
-      name = input.name;
-      phone = input.phone;
-      utr = input.utr;
-      amount = input.amount;
-      timestamp = Time.now();
-      status = #pending;
-    };
-
-    paymentSubmissions.add(nextPaymentSubmissionId, submission);
-    nextPaymentSubmissionId += 1;
-
-    submission.id;
   };
 
+  // USER-ONLY function
   public query ({ caller }) func getMyPaymentSubmissions() : async [PaymentSubmission] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view payment submissions");
@@ -257,6 +337,7 @@ actor {
     ).sort();
   };
 
+  // ADMIN-ONLY function
   public query ({ caller }) func getAllPaymentSubmissions() : async [PaymentSubmission] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can view all payment submissions");
@@ -265,6 +346,7 @@ actor {
     paymentSubmissions.values().toArray().sort();
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func verifyPaymentSubmission(submissionId : Nat, action : Text) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can verify payment submissions");
@@ -348,6 +430,7 @@ actor {
     };
   };
 
+  // USER-ONLY function - users can only view their own profile
   public query ({ caller }) func getMyProfile(userId : Nat) : async User {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
@@ -358,6 +441,7 @@ actor {
       case (?id) { id };
     };
 
+    // Users can only view their own profile, admins can view any
     if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Can only view your own profile");
     };
@@ -368,6 +452,7 @@ actor {
     };
   };
 
+  // USER-ONLY function - users can only view their own tree
   public query ({ caller }) func getReferralTree(userId : Nat) : async ReferralNode {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view referral tree");
@@ -378,6 +463,7 @@ actor {
       case (?id) { id };
     };
 
+    // Users can only view their own tree, admins can view any
     if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Can only view your own referral tree");
     };
@@ -385,6 +471,7 @@ actor {
     buildReferralTree(userId, 0);
   };
 
+  // USER-ONLY function - only paid members or admin
   public query ({ caller }) func getAllVideos() : async [Video] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view videos");
@@ -407,6 +494,7 @@ actor {
     videos.values().toArray();
   };
 
+  // USER-ONLY function - only paid members or admin
   public query ({ caller }) func getVideosByCategory(category : Text) : async [Video] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view videos");
@@ -429,6 +517,7 @@ actor {
     videos.values().toArray().filter(func(v) { Text.equal(v.category, category) });
   };
 
+  // USER-ONLY function - only paid members
   public shared ({ caller }) func recordWatchProgress(videoId : Nat, watchedSeconds : Nat, subscribed : Bool) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can record watch progress");
@@ -464,6 +553,7 @@ actor {
     watchRecords.add(watchRecordId, record);
   };
 
+  // USER-ONLY function
   public query ({ caller }) func getMyWatchHistory() : async [WatchRecord] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view watch history");
@@ -477,6 +567,7 @@ actor {
     watchRecords.values().toArray().filter(func(w) { w.userId == userId });
   };
 
+  // USER-ONLY function
   public query ({ caller }) func getTransactions() : async [Transaction] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view transactions");
@@ -490,6 +581,7 @@ actor {
     transactions.values().toArray().filter(func(t) { t.userId == userId }).sort();
   };
 
+  // USER-ONLY function
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view profiles");
@@ -497,13 +589,19 @@ actor {
     userProfiles.get(caller);
   };
 
+  // USER-ONLY function - can view own profile or admin can view any
   public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
+      Runtime.trap("Unauthorized: Only users can view profiles");
+    };
+
     if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
       Runtime.trap("Unauthorized: Can only view your own profile");
     };
     userProfiles.get(user);
   };
 
+  // USER-ONLY function
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can save profiles");
@@ -511,6 +609,7 @@ actor {
     userProfiles.add(caller, profile);
   };
 
+  // ADMIN-ONLY function
   public query ({ caller }) func getAllUsers() : async [User] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -518,6 +617,7 @@ actor {
     users.values().toArray();
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func updateUserStatus(userId : Nat, isActive : Bool) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -532,6 +632,7 @@ actor {
     users.add(userId, updatedUser);
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func updateUser(userId : Nat, name : Text, email : Text, phone : Text, isActive : Bool) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -546,6 +647,7 @@ actor {
     users.add(userId, updatedUser);
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func deleteUser(userId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -581,6 +683,7 @@ actor {
     };
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func addVideo(title : Text, category : Text, url : Text, description : Text, duration : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -602,6 +705,7 @@ actor {
     videos.add(videoId, video);
   };
 
+  // ADMIN-ONLY function
   public shared ({ caller }) func deleteVideo(videoId : Nat) : async () {
     if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
       Runtime.trap("Unauthorized: Only admins can perform this action");
@@ -614,6 +718,7 @@ actor {
     videos.remove(videoId);
   };
 
+  // PUBLIC function - allows first authenticated caller to claim admin
   public shared ({ caller }) func claimFirstAdmin() : async () {
     if (caller.isAnonymous()) {
       Runtime.trap("Must be authenticated to claim admin");
@@ -621,11 +726,28 @@ actor {
     if (adminAssigned) {
       Runtime.trap("An admin has already been assigned");
     };
+
+    // Directly add admin role to accessControlState.userRoles bypassing assignRole
     accessControlState.userRoles.add(caller, #admin);
     adminAssigned := true;
+    accessControlState.adminAssigned := true;
   };
 
+  // PUBLIC query function - no authentication required
   public query func isAdminAssigned() : async Bool {
     adminAssigned;
+  };
+
+  // ADMIN-ONLY function - only existing admins can assign new admins
+  public shared ({ caller }) func forceSetAdmin(principalText : Text) : async Text {
+    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
+      Runtime.trap("Unauthorized: Only admins can assign admin roles");
+    };
+
+    let newAdmin = Principal.fromText(principalText);
+    accessControlState.userRoles.add(newAdmin, #admin);
+    adminAssigned := true;
+    accessControlState.adminAssigned := true;
+    "OK";
   };
 };

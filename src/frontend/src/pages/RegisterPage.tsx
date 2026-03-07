@@ -23,10 +23,9 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { useInternetIdentity } from "../hooks/useInternetIdentity";
+import { useActor } from "../hooks/useActor";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
-  useCallerUserProfile,
-  useMyProfile,
   useRegisterMutation,
   useSubmitPaymentProofMutation,
 } from "../hooks/useQueries";
@@ -35,13 +34,13 @@ const UPI_ID = "yespay.bizsbiz12758@yesbankltd";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
-  const { login, isLoggingIn, identity, isInitializing } =
-    useInternetIdentity();
+  const phoneAuth = usePhoneAuth();
+  const { actor, isFetching: actorFetching } = useActor();
 
   const [form, setForm] = useState({
-    name: "",
+    name: phoneAuth.userName ?? "",
     email: "",
-    phone: "",
+    phone: phoneAuth.phone ?? "",
     referredBy: "",
   });
   const [step, setStep] = useState<"form" | "payment" | "success">("form");
@@ -51,8 +50,8 @@ export default function RegisterPage() {
   const [showUtrForm, setShowUtrForm] = useState(false);
   const [utrForm, setUtrForm] = useState({
     txId: "",
-    userName: form.name,
-    phone: form.phone,
+    userName: phoneAuth.userName ?? "",
+    phone: phoneAuth.phone ?? "",
     amount: "118",
   });
   const [utrError, setUtrError] = useState<string | null>(null);
@@ -60,50 +59,42 @@ export default function RegisterPage() {
   const registerMutation = useRegisterMutation();
   const submitPaymentProofMutation = useSubmitPaymentProofMutation();
 
-  // Check if user is already registered (returning next-day user scenario)
-  const { data: userProfile, isLoading: profileLoading } =
-    useCallerUserProfile();
-  const { data: myProfile, isLoading: myProfileLoading } = useMyProfile(
-    userProfile?.userId ?? null,
-  );
-
-  // Auto-jump to payment step if already registered but not yet paid
+  // If user is already logged in (phone saved), check their payment status using the public getUserByPhone
   useEffect(() => {
-    if (step !== "form") return;
-    if (!identity || isInitializing) return;
-    if (profileLoading || myProfileLoading) return;
+    if (!phoneAuth.isLoggedIn || !phoneAuth.phone) return;
+    if (!actor || actorFetching) return;
 
-    if (myProfile) {
-      if (myProfile.isPaid) {
-        // Already fully paid → go to dashboard
-        navigate({ to: "/dashboard" });
-        return;
-      }
-      // Registered but not paid → jump to payment step with pre-filled data
-      setStep("payment");
-      setUtrForm((prev) => ({
-        ...prev,
-        userName: myProfile.name || userProfile?.name || "",
-        phone: myProfile.phone || userProfile?.phone || "",
-      }));
-    }
+    // Use the public getUserByPhone -- no auth required, works for anonymous/phone users
+    actor
+      .getUserByPhone(phoneAuth.phone)
+      .then((user) => {
+        if (!user) {
+          // Not registered yet — stay on form step
+          return;
+        }
+        if (user.isPaid) {
+          navigate({ to: "/dashboard" });
+        } else {
+          // Registered but not paid — go to payment step
+          setStep("payment");
+          setUtrForm((prev) => ({
+            ...prev,
+            userName: user.name || phoneAuth.userName || "",
+            phone: user.phone || phoneAuth.phone || "",
+          }));
+        }
+      })
+      .catch(() => {
+        // Lookup failed — stay on form
+      });
   }, [
-    step,
-    identity,
-    isInitializing,
-    profileLoading,
-    myProfileLoading,
-    myProfile,
-    userProfile,
+    phoneAuth.isLoggedIn,
+    phoneAuth.phone,
+    phoneAuth.userName,
+    actor,
+    actorFetching,
     navigate,
   ]);
-
-  // Show loading spinner while checking profile for returning users
-  const isCheckingProfile =
-    !!identity &&
-    !isInitializing &&
-    step === "form" &&
-    (profileLoading || (userProfile != null && myProfileLoading));
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -111,35 +102,114 @@ export default function RegisterPage() {
   };
 
   const handleRegister = async () => {
-    if (!form.name.trim() || !form.email.trim() || !form.phone.trim()) {
-      setError("Please fill in all required fields.");
+    if (!form.phone.trim()) {
+      setError("Please enter your mobile number.");
       return;
     }
-    if (!identity) {
-      setError("Please login first to register.");
+
+    setError(null);
+
+    // Step 1: Always check if user already exists by phone (login flow)
+    // This runs regardless of whether name/email are filled
+    if (actor) {
+      try {
+        const existingUser = await actor.getUserByPhone(form.phone.trim());
+        if (existingUser) {
+          // User already registered — log them in directly, no registration needed
+          phoneAuth.login(
+            existingUser.phone,
+            existingUser.id,
+            existingUser.name,
+          );
+          if (existingUser.isPaid) {
+            navigate({ to: "/dashboard" });
+          } else {
+            setUtrForm((prev) => ({
+              ...prev,
+              userName: existingUser.name || form.name,
+              phone: existingUser.phone || form.phone,
+            }));
+            setStep("payment");
+          }
+          return;
+        }
+      } catch {
+        // getUserByPhone failed — proceed to register as new user below
+      }
+    }
+
+    // Step 2: User doesn't exist — validate full form before registering
+    if (!form.name.trim() || !form.email.trim()) {
+      setError(
+        "New user? Please fill in your Full Name and Email to register.",
+      );
       return;
     }
+
+    // Step 3: Register as new user
     try {
-      setError(null);
       await registerMutation.mutateAsync({
         name: form.name,
         email: form.email,
         phone: form.phone,
         referredBy: form.referredBy,
       });
+
+      // Save phone session after register
+      phoneAuth.login(form.phone, null, form.name);
+
       setStep("payment");
+      setUtrForm((prev) => ({
+        ...prev,
+        userName: form.name,
+        phone: form.phone,
+      }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Registration failed";
+
+      // Last-resort: if "already registered" slips through, try login again
+      if (
+        msg.toLowerCase().includes("already registered") ||
+        msg.toLowerCase().includes("already exists")
+      ) {
+        if (actor) {
+          try {
+            const existingUser = await actor.getUserByPhone(form.phone.trim());
+            if (existingUser) {
+              phoneAuth.login(
+                existingUser.phone,
+                existingUser.id,
+                existingUser.name,
+              );
+              if (existingUser.isPaid) {
+                navigate({ to: "/dashboard" });
+              } else {
+                setUtrForm((prev) => ({
+                  ...prev,
+                  userName: existingUser.name || form.name,
+                  phone: existingUser.phone || form.phone,
+                }));
+                setStep("payment");
+              }
+              return;
+            }
+          } catch {
+            // ignore
+          }
+        }
+        setError("Already registered. Enter your mobile number to login.");
+        return;
+      }
+
       setError(msg);
     }
   };
 
   const handleShowUtrForm = () => {
-    // When "I have Paid" is clicked, show UTR form pre-filled with form data
     setUtrForm({
       txId: "",
-      userName: form.name,
-      phone: form.phone,
+      userName: form.name || phoneAuth.userName || "",
+      phone: form.phone || phoneAuth.phone || "",
       amount: String(total),
     });
     setUtrError(null);
@@ -181,8 +251,12 @@ export default function RegisterPage() {
       setStep("success");
       toast.success("Payment proof submitted! Admin will verify shortly.");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Payment failed";
+      const msg =
+        err instanceof Error
+          ? err.message
+          : "Payment submission failed. Please try again.";
       setUtrError(msg);
+      toast.error(msg);
     }
   };
 
@@ -190,21 +264,6 @@ export default function RegisterPage() {
   const gst = 18;
   const gstAmount = Math.round((membershipFee * gst) / 100);
   const total = membershipFee + gstAmount;
-
-  // Show full-screen loading while checking returning user's payment status
-  if (isCheckingProfile) {
-    return (
-      <div className="min-h-screen bg-background flex flex-col items-center justify-center gap-4">
-        <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center glow-gold animate-pulse-gold">
-          <Crown className="w-6 h-6 text-primary-foreground" />
-        </div>
-        <Loader2 className="w-8 h-8 text-primary animate-spin" />
-        <p className="text-muted-foreground font-ui text-sm">
-          Loading your account…
-        </p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -287,28 +346,10 @@ export default function RegisterPage() {
                     </CardTitle>
                   </div>
                   <p className="text-muted-foreground text-sm font-body">
-                    Enter your mobile number to get started
+                    Enter your mobile number to login or register
                   </p>
                 </CardHeader>
                 <CardContent className="space-y-5">
-                  {/* Login prompt */}
-                  {!identity && (
-                    <Alert className="border-primary/30 bg-primary/10">
-                      <Crown className="w-4 h-4 text-primary" />
-                      <AlertDescription className="text-sm font-body">
-                        You need to login first before registering.{" "}
-                        <button
-                          type="button"
-                          onClick={login}
-                          className="text-primary underline font-medium"
-                          data-ocid="register.login.button"
-                        >
-                          {isLoggingIn ? "Logging in..." : "Login now"}
-                        </button>
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
                   {error && (
                     <Alert
                       variant="destructive"
@@ -424,17 +465,15 @@ export default function RegisterPage() {
                   <Button
                     className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
                     onClick={handleRegister}
-                    disabled={
-                      registerMutation.isPending || !identity || isLoggingIn
-                    }
+                    disabled={registerMutation.isPending}
                     data-ocid="register.submit.button"
                   >
                     {registerMutation.isPending ? (
                       <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                     ) : null}
                     {registerMutation.isPending
-                      ? "Registering..."
-                      : "Continue to Payment"}
+                      ? "Please wait..."
+                      : "Login / Continue to Payment"}
                   </Button>
                 </CardContent>
               </Card>
@@ -622,7 +661,7 @@ export default function RegisterPage() {
                         {utrError && (
                           <Alert
                             variant="destructive"
-                            data-ocid="register.payment.error_state"
+                            data-ocid="register.utr.error_state"
                           >
                             <AlertCircle className="w-4 h-4" />
                             <AlertDescription className="font-body text-sm">

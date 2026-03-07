@@ -1,13 +1,6 @@
-import {
-  type ReactNode,
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-} from "react";
+import { type ReactNode, createContext, useContext } from "react";
 import type { UserProfile } from "../backend.d";
-import { useInternetIdentity } from "./useInternetIdentity";
-import { useCallerUserProfile } from "./useQueries";
+import { usePhoneAuth } from "./usePhoneAuth";
 
 interface AppContextValue {
   userProfile: UserProfile | null | undefined;
@@ -18,17 +11,24 @@ interface AppContextValue {
 const AppContext = createContext<AppContextValue | undefined>(undefined);
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  const { identity } = useInternetIdentity();
-  const { data: userProfile, isLoading } = useCallerUserProfile();
+  const phoneAuth = usePhoneAuth();
 
-  const userId = userProfile?.userId ?? null;
+  // Build a minimal UserProfile from phone auth session data
+  const userProfile: UserProfile | null = phoneAuth.isLoggedIn
+    ? {
+        userId: phoneAuth.userId ?? BigInt(0),
+        name: phoneAuth.userName ?? "",
+        email: "",
+        phone: phoneAuth.phone ?? "",
+      }
+    : null;
 
   return (
     <AppContext.Provider
       value={{
-        userProfile: identity ? userProfile : null,
-        isLoadingProfile: isLoading,
-        userId,
+        userProfile,
+        isLoadingProfile: false,
+        userId: phoneAuth.userId,
       }}
     >
       {children}
@@ -42,22 +42,21 @@ export function useAppContext() {
   return ctx;
 }
 
-// ─── Local storage helpers for demo purposes ─────────────────────────────────
+// ─── Local storage helpers ─────────────────────────────────────────────────────
 export function useLocalUserId() {
-  const [userId, setUserId] = useState<bigint | null>(() => {
-    const stored = localStorage.getItem("tm11_userId");
-    return stored ? BigInt(stored) : null;
-  });
+  const phoneAuth = usePhoneAuth();
 
   const saveUserId = (id: bigint) => {
     localStorage.setItem("tm11_userId", id.toString());
-    setUserId(id);
   };
 
   const clearUserId = () => {
     localStorage.removeItem("tm11_userId");
-    setUserId(null);
   };
 
-  return { userId, saveUserId, clearUserId };
+  return {
+    userId: phoneAuth.userId,
+    saveUserId,
+    clearUserId,
+  };
 }

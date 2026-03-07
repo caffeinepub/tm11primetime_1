@@ -171,6 +171,7 @@ export interface backendInterface {
     claimFirstAdmin(): Promise<void>;
     deleteUser(userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
+    forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllUsers(): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
@@ -180,7 +181,14 @@ export interface backendInterface {
     getMyProfile(userId: bigint): Promise<User>;
     getMyWatchHistory(): Promise<Array<WatchRecord>>;
     getReferralTree(userId: bigint): Promise<ReferralNode>;
+    getReferralTreeByCode(referralCode: string): Promise<{
+        id: bigint;
+        referralCode: string;
+        name: string;
+        children: Array<ReferralNode>;
+    }>;
     getTransactions(): Promise<Array<Transaction>>;
+    getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
     isAdminAssigned(): Promise<boolean>;
@@ -193,7 +201,7 @@ export interface backendInterface {
     updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
     verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
 }
-import type { PaymentStatus as _PaymentStatus, PaymentSubmission as _PaymentSubmission, ReferralNode as _ReferralNode, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { PaymentStatus as _PaymentStatus, PaymentSubmission as _PaymentSubmission, ReferralNode as _ReferralNode, User as _User, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -277,6 +285,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteVideo(arg0);
+            return result;
+        }
+    }
+    async forceSetAdmin(arg0: string): Promise<string> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.forceSetAdmin(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.forceSetAdmin(arg0);
             return result;
         }
     }
@@ -406,6 +428,25 @@ export class Backend implements backendInterface {
             return from_candid_ReferralNode_n11(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getReferralTreeByCode(arg0: string): Promise<{
+        id: bigint;
+        referralCode: string;
+        name: string;
+        children: Array<ReferralNode>;
+    }> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getReferralTreeByCode(arg0);
+                return from_candid_record_n12(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getReferralTreeByCode(arg0);
+            return from_candid_record_n12(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getTransactions(): Promise<Array<Transaction>> {
         if (this.processError) {
             try {
@@ -418,6 +459,20 @@ export class Backend implements backendInterface {
         } else {
             const result = await this.actor.getTransactions();
             return result;
+        }
+    }
+    async getUserByPhone(arg0: string): Promise<User | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserByPhone(arg0);
+                return from_candid_opt_n14(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserByPhone(arg0);
+            return from_candid_opt_n14(this._uploadFile, this._downloadFile, result);
         }
     }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
@@ -586,6 +641,9 @@ function from_candid_ReferralNode_n11(_uploadFile: (file: ExternalBlob) => Promi
 }
 function from_candid_UserRole_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n10(_uploadFile, _downloadFile, value);
+}
+function from_candid_opt_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_User]): User | null {
+    return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
     return value.length === 0 ? null : value[0];

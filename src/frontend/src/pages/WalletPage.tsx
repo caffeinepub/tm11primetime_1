@@ -15,18 +15,14 @@ import {
   ArrowUpRight,
   Clock,
   Gift,
-  Loader2,
   TrendingDown,
   TrendingUp,
   Wallet,
 } from "lucide-react";
 import { motion } from "motion/react";
 import type { Transaction } from "../backend.d";
-import {
-  useCallerUserProfile,
-  useMyProfile,
-  useTransactions,
-} from "../hooks/useQueries";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import { useUserByPhone } from "../hooks/useQueries";
 
 const TX_TYPE_CONFIG: Record<
   string,
@@ -128,21 +124,17 @@ const SAMPLE_TRANSACTIONS: Transaction[] = [
 ];
 
 export default function WalletPage() {
-  const { data: callerProfile, isLoading: profileLoading } =
-    useCallerUserProfile();
-  const userId = callerProfile?.userId ?? null;
+  const phoneAuth = usePhoneAuth();
 
-  const { data: userProfile } = useMyProfile(userId);
-  const { data: transactions, isLoading: txLoading } = useTransactions(userId);
+  const { data: userProfile } = useUserByPhone(phoneAuth.phone);
 
   const walletBalance = userProfile?.walletBalance ?? BigInt(0);
   const walletRs = Number(walletBalance) / 100;
 
-  // Use real data or sample
-  const displayTransactions =
-    transactions && transactions.length > 0
-      ? transactions
-      : SAMPLE_TRANSACTIONS;
+  // Transactions are principal-gated and not available for phone-based users.
+  // Show sample/demo data to illustrate the structure.
+  const txLoading = false;
+  const displayTransactions: Transaction[] = SAMPLE_TRANSACTIONS;
 
   // Compute stats
   const totalEarned =
@@ -201,7 +193,7 @@ export default function WalletPage() {
               </div>
             </div>
             <div className="text-xs text-muted-foreground font-body">
-              {userProfile?.name ?? callerProfile?.name ?? "Member"} •{" "}
+              {userProfile?.name ?? phoneAuth.userName ?? "Member"} •{" "}
               {userProfile?.referralCode && (
                 <span className="text-primary font-medium">
                   Code: {userProfile.referralCode}
@@ -284,9 +276,13 @@ export default function WalletPage() {
             <CardTitle className="font-display font-bold text-lg text-foreground">
               Transaction History
             </CardTitle>
+            <p className="text-muted-foreground text-xs font-body mt-1">
+              Showing sample transactions. Full history will be available once
+              your account is fully activated.
+            </p>
           </CardHeader>
           <CardContent className="p-0">
-            {txLoading || profileLoading ? (
+            {txLoading ? (
               <div className="p-5 space-y-3" data-ocid="wallet.loading_state">
                 {["s1", "s2", "s3", "s4", "s5"].map((k) => (
                   <Skeleton
