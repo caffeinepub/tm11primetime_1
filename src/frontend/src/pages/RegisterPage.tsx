@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   AlertCircle,
   ArrowLeft,
@@ -36,6 +36,12 @@ export default function RegisterPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
   const { actor, isFetching: actorFetching } = useActor();
+  const search = useSearch({ from: "/register" });
+
+  // If redirected with ?step=payment (user is already registered but unpaid),
+  // skip straight to the payment step without waiting for the backend check.
+  const initialStep =
+    (search as { step?: string }).step === "payment" ? "payment" : "form";
 
   const [form, setForm] = useState({
     name: phoneAuth.userName ?? "",
@@ -43,7 +49,11 @@ export default function RegisterPage() {
     phone: phoneAuth.phone ?? "",
     referredBy: "",
   });
-  const [step, setStep] = useState<"form" | "payment" | "success">("form");
+  // "phone" = only phone field shown; "details" = new user, show full form; "checking" = checking backend
+  const [formMode, setFormMode] = useState<"phone" | "checking" | "details">(
+    "phone",
+  );
+  const [step, setStep] = useState<"form" | "payment" | "success">(initialStep);
   const [error, setError] = useState<string | null>(null);
 
   // UTR submission form state
@@ -54,6 +64,17 @@ export default function RegisterPage() {
     phone: phoneAuth.phone ?? "",
     amount: "118",
   });
+
+  // When jumping straight to payment step (from login), ensure UTR form is pre-filled
+  useEffect(() => {
+    if (initialStep === "payment") {
+      setUtrForm((prev) => ({
+        ...prev,
+        userName: prev.userName || phoneAuth.userName || "",
+        phone: prev.phone || phoneAuth.phone || "",
+      }));
+    }
+  }, [initialStep, phoneAuth.userName, phoneAuth.phone]);
   const [utrError, setUtrError] = useState<string | null>(null);
 
   const registerMutation = useRegisterMutation();
@@ -101,20 +122,21 @@ export default function RegisterPage() {
     setError(null);
   };
 
-  const handleRegister = async () => {
+  // Phase 1: User entered phone, check if they exist
+  const handlePhoneCheck = async () => {
     if (!form.phone.trim()) {
       setError("Please enter your mobile number.");
       return;
     }
 
     setError(null);
+    setFormMode("checking");
 
-    // Step 1: Check if user already exists by phone (login flow)
     if (actor) {
       try {
         const existingUser = await actor.getUserByPhone(form.phone.trim());
         if (existingUser) {
-          // User already registered — log them in directly, no registration needed
+          // User already registered — log them in directly
           phoneAuth.login(
             existingUser.phone,
             existingUser.id,
@@ -125,29 +147,36 @@ export default function RegisterPage() {
           } else {
             setUtrForm((prev) => ({
               ...prev,
-              userName: existingUser.name || form.name,
+              userName: existingUser.name || "",
               phone: existingUser.phone || form.phone,
             }));
             setStep("payment");
           }
           return;
         }
-        // User not found — proceed to register below
+        // User not found — new user, show registration fields
+        setFormMode("details");
+        return;
       } catch {
-        // getUserByPhone failed (e.g. Unauthorized on anonymous actor)
-        // This is expected -- proceed to register as new user
+        // getUserByPhone failed — treat as new user and show registration fields
+        setFormMode("details");
+        return;
       }
     }
 
-    // Step 2: User doesn't exist — validate full form before registering
+    // Actor not available — show registration fields anyway (new user assumption)
+    setFormMode("details");
+  };
+
+  // Phase 2: User is new, submit full registration form
+  const handleRegister = async () => {
     if (!form.name.trim() || !form.email.trim()) {
-      setError(
-        "New user? Please fill in your Full Name and Email to register.",
-      );
+      setError("Please fill in your Full Name and Email to register.");
       return;
     }
 
-    // Step 3: Register as new user
+    setError(null);
+
     try {
       await registerMutation.mutateAsync({
         name: form.name,
@@ -168,7 +197,7 @@ export default function RegisterPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Registration failed";
 
-      // Last-resort: if "already registered" slips through, try login again
+      // If "already registered" slips through, try login again
       if (
         msg.toLowerCase().includes("already registered") ||
         msg.toLowerCase().includes("already exists")
@@ -198,7 +227,14 @@ export default function RegisterPage() {
             // ignore
           }
         }
-        setError("Already registered. Enter your mobile number to login.");
+        // Auto-login: just use the phone number they entered
+        phoneAuth.login(form.phone, null, form.name || "User");
+        setUtrForm((prev) => ({
+          ...prev,
+          userName: form.name || "User",
+          phone: form.phone,
+        }));
+        setStep("payment");
         return;
       }
 
@@ -363,7 +399,7 @@ export default function RegisterPage() {
                     </Alert>
                   )}
 
-                  {/* Phone Number — PRIMARY field, visually prominent */}
+                  {/* Phone Number — always shown */}
                   <div className="space-y-1.5">
                     <Label
                       htmlFor="phone"
@@ -378,11 +414,16 @@ export default function RegisterPage() {
                         name="phone"
                         type="tel"
                         value={form.phone}
-                        onChange={handleChange}
+                        onChange={(e) => {
+                          handleChange(e);
+                          // Reset to phone-only mode if user changes number
+                          if (formMode === "details") setFormMode("phone");
+                        }}
                         placeholder="+91 98765 43210"
                         className="pl-10 h-12 text-base bg-input border-border font-body border-primary/40 focus:border-primary ring-primary/20"
                         autoComplete="tel"
                         data-ocid="register.phone.input"
+                        disabled={formMode === "checking"}
                       />
                     </div>
                     <p className="text-xs text-muted-foreground font-body">
@@ -390,92 +431,136 @@ export default function RegisterPage() {
                     </p>
                   </div>
 
-                  {/* Divider between primary and secondary fields */}
-                  <div className="relative flex items-center gap-3">
-                    <div className="flex-1 h-px bg-border" />
-                    <span className="text-xs text-muted-foreground font-ui uppercase tracking-widest">
-                      Profile Details
-                    </span>
-                    <div className="flex-1 h-px bg-border" />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="name"
-                      className="font-ui text-sm text-foreground/80"
+                  {/* Phase 1: Show only "Continue" button to check phone */}
+                  {formMode === "phone" && (
+                    <Button
+                      className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
+                      onClick={handlePhoneCheck}
+                      disabled={actorFetching}
+                      data-ocid="register.phone_check.button"
                     >
-                      Full Name *
-                    </Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="name"
-                        name="name"
-                        value={form.name}
-                        onChange={handleChange}
-                        placeholder="Enter your full name"
-                        className="pl-9 bg-input border-border font-body"
-                        data-ocid="register.name.input"
-                      />
-                    </div>
-                  </div>
+                      {actorFetching ? (
+                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                      ) : null}
+                      {actorFetching ? "Connecting..." : "Login / Continue"}
+                    </Button>
+                  )}
 
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="email"
-                      className="font-ui text-sm text-foreground/80"
+                  {/* Checking state */}
+                  {formMode === "checking" && (
+                    <div
+                      className="flex items-center justify-center gap-2 py-3 text-muted-foreground font-body text-sm"
+                      data-ocid="register.form.loading_state"
                     >
-                      Email Address *
-                    </Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="email"
-                        name="email"
-                        type="email"
-                        value={form.email}
-                        onChange={handleChange}
-                        placeholder="your@email.com"
-                        className="pl-9 bg-input border-border font-body"
-                        data-ocid="register.email.input"
-                      />
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Checking your account...
                     </div>
-                  </div>
+                  )}
 
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="referredBy"
-                      className="font-ui text-sm text-foreground/80"
-                    >
-                      Referral Code (Optional)
-                    </Label>
-                    <div className="relative">
-                      <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="referredBy"
-                        name="referredBy"
-                        value={form.referredBy}
-                        onChange={handleChange}
-                        placeholder="Enter referral code"
-                        className="pl-9 bg-input border-border font-body"
-                        data-ocid="register.referral.input"
-                      />
-                    </div>
-                  </div>
+                  {/* Phase 2: New user — show registration fields */}
+                  {formMode === "details" && (
+                    <>
+                      {/* Divider */}
+                      <div className="relative flex items-center gap-3">
+                        <div className="flex-1 h-px bg-border" />
+                        <span className="text-xs text-muted-foreground font-ui uppercase tracking-widest">
+                          New User — Profile Details
+                        </span>
+                        <div className="flex-1 h-px bg-border" />
+                      </div>
 
-                  <Button
-                    className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
-                    onClick={handleRegister}
-                    disabled={registerMutation.isPending}
-                    data-ocid="register.submit.button"
-                  >
-                    {registerMutation.isPending ? (
-                      <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                    ) : null}
-                    {registerMutation.isPending
-                      ? "Please wait..."
-                      : "Login / Continue to Payment"}
-                  </Button>
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="name"
+                          className="font-ui text-sm text-foreground/80"
+                        >
+                          Full Name *
+                        </Label>
+                        <div className="relative">
+                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="name"
+                            name="name"
+                            value={form.name}
+                            onChange={handleChange}
+                            placeholder="Enter your full name"
+                            className="pl-9 bg-input border-border font-body"
+                            data-ocid="register.name.input"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="email"
+                          className="font-ui text-sm text-foreground/80"
+                        >
+                          Email Address *
+                        </Label>
+                        <div className="relative">
+                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="email"
+                            name="email"
+                            type="email"
+                            value={form.email}
+                            onChange={handleChange}
+                            placeholder="your@email.com"
+                            className="pl-9 bg-input border-border font-body"
+                            data-ocid="register.email.input"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="referredBy"
+                          className="font-ui text-sm text-foreground/80"
+                        >
+                          Referral Code (Optional)
+                        </Label>
+                        <div className="relative">
+                          <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <Input
+                            id="referredBy"
+                            name="referredBy"
+                            value={form.referredBy}
+                            onChange={handleChange}
+                            placeholder="Enter referral code"
+                            className="pl-9 bg-input border-border font-body"
+                            data-ocid="register.referral.input"
+                          />
+                        </div>
+                      </div>
+
+                      <Button
+                        className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
+                        onClick={handleRegister}
+                        disabled={registerMutation.isPending}
+                        data-ocid="register.submit.button"
+                      >
+                        {registerMutation.isPending ? (
+                          <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                        ) : null}
+                        {registerMutation.isPending
+                          ? "Registering..."
+                          : "Register & Continue to Payment"}
+                      </Button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFormMode("phone");
+                          setError(null);
+                        }}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto font-ui"
+                        data-ocid="register.back_to_phone.button"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        Use a different number
+                      </button>
+                    </>
+                  )}
                 </CardContent>
               </Card>
             </motion.div>

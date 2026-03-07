@@ -87,13 +87,13 @@ export default function LandingPage() {
         match = await actor.getUserByPhone(trimmed);
       } catch {
         // If getUserByPhone fails (e.g. Unauthorized), treat as new/unknown user → go to register
-        navigate({ to: "/register" });
+        navigate({ to: "/register", search: {} });
         return;
       }
 
       if (!match) {
         // No user found → new user, go register
-        navigate({ to: "/register" });
+        navigate({ to: "/register", search: {} });
         return;
       }
 
@@ -103,7 +103,8 @@ export default function LandingPage() {
       if (match.isPaid) {
         navigate({ to: "/dashboard" });
       } else {
-        navigate({ to: "/register" });
+        // Registered but not paid — go directly to payment step
+        navigate({ to: "/register", search: { step: "payment" } });
       }
     } catch (err) {
       const msg =
@@ -145,7 +146,7 @@ export default function LandingPage() {
             </span>
           </div>
           <Button
-            onClick={() => navigate({ to: "/register" })}
+            onClick={() => navigate({ to: "/register", search: {} })}
             variant="outline"
             className="border-primary/60 text-primary hover:bg-primary hover:text-primary-foreground font-ui"
             data-ocid="landing.register.button"
@@ -386,7 +387,7 @@ export default function LandingPage() {
           </p>
           <Button
             size="lg"
-            onClick={() => navigate({ to: "/register" })}
+            onClick={() => navigate({ to: "/register", search: {} })}
             className="bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-lg px-10 py-6 glow-gold"
             data-ocid="landing.cta.primary_button"
           >

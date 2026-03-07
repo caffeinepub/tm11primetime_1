@@ -68,6 +68,7 @@ import {
   useAllPaymentSubmissions,
   useAllUsers,
   useAllVideosPublic,
+  useDeletePaymentSubmissionMutation,
   useDeleteUserMutation,
   useDeleteVideoMutation,
   useUpdateUserMutation,
@@ -285,6 +286,10 @@ export default function AdminPage() {
   const [deleteUserId, setDeleteUserId] = useState<bigint | null>(null);
   const [deleteUserName, setDeleteUserName] = useState("");
 
+  const deletePaymentMutation = useDeletePaymentSubmissionMutation();
+  const [deletePaymentId, setDeletePaymentId] = useState<bigint | null>(null);
+  const [deletePaymentName, setDeletePaymentName] = useState("");
+
   // ── Show login if not authenticated ──────────────────────────────────────
 
   if (!isAdminLoggedIn) {
@@ -403,14 +408,32 @@ export default function AdminPage() {
     }
   };
 
+  const handleConfirmDeletePayment = async () => {
+    if (deletePaymentId === null) return;
+    try {
+      await deletePaymentMutation.mutateAsync(deletePaymentId);
+      toast.success("Payment record deleted.");
+      setDeletePaymentId(null);
+      setDeletePaymentName("");
+    } catch (err) {
+      const msg =
+        err instanceof Error ? err.message : "Failed to delete payment";
+      toast.error(msg);
+    }
+  };
+
   // ── Summary stats ─────────────────────────────────────────────────────────
 
   const totalUsers = users?.length ?? 0;
   const paidUsers = users?.filter((u) => u.isPaid).length ?? 0;
   const activeUsers = users?.filter((u) => u.isActive).length ?? 0;
+  const visiblePaymentSubmissions = paymentSubmissions;
+
   const pendingPayments =
-    paymentSubmissions?.filter((p) => String(p.status) === "pending").length ??
-    0;
+    paymentSubmissions?.filter((p) => {
+      const s = p.status;
+      return typeof s === "object" ? "pending" in s : String(s) === "pending";
+    }).length ?? 0;
 
   // ── Full admin panel ──────────────────────────────────────────────────────
 
@@ -865,7 +888,8 @@ export default function AdminPage() {
                       <Skeleton key={k} className="h-12 rounded-lg" />
                     ))}
                   </div>
-                ) : !paymentSubmissions || paymentSubmissions.length === 0 ? (
+                ) : !visiblePaymentSubmissions ||
+                  visiblePaymentSubmissions.length === 0 ? (
                   <div
                     className="p-10 text-center"
                     data-ocid="admin.payments.empty_state"
@@ -902,7 +926,7 @@ export default function AdminPage() {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {paymentSubmissions.map((submission, i) => {
+                        {visiblePaymentSubmissions.map((submission, i) => {
                           const ocidIndex = i + 1;
                           const submittedAt = new Date(
                             Number(submission.timestamp / BigInt(1_000_000)),
@@ -913,7 +937,12 @@ export default function AdminPage() {
                             hour: "2-digit",
                             minute: "2-digit",
                           });
-                          const statusStr = String(submission.status);
+                          const statusRaw = submission.status;
+                          const statusStr =
+                            typeof statusRaw === "object" && statusRaw !== null
+                              ? (Object.keys(statusRaw as object)[0] ??
+                                "pending")
+                              : String(statusRaw);
                           const isPending = statusStr === "pending";
                           return (
                             <TableRow
@@ -1018,7 +1047,7 @@ export default function AdminPage() {
                                       }}
                                       disabled={verifyPaymentMutation.isPending}
                                       className="border-red-500/30 text-red-400 hover:bg-red-500/10 font-ui text-xs h-7 px-2.5"
-                                      data-ocid={`admin.payments.delete_button.${ocidIndex}`}
+                                      data-ocid={`admin.payments.reject_button.${ocidIndex}`}
                                     >
                                       {verifyPaymentMutation.isPending ? (
                                         <Loader2 className="w-3 h-3 animate-spin" />
@@ -1027,11 +1056,37 @@ export default function AdminPage() {
                                       )}
                                       Reject
                                     </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setDeletePaymentId(submission.id);
+                                        setDeletePaymentName(submission.name);
+                                      }}
+                                      className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-7 h-7 p-0"
+                                      data-ocid={`admin.payments.delete_button.${ocidIndex}`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
                                   </div>
                                 ) : (
-                                  <span className="text-xs text-muted-foreground font-body italic">
-                                    Resolved
-                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-xs text-muted-foreground font-body italic">
+                                      Resolved
+                                    </span>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      onClick={() => {
+                                        setDeletePaymentId(submission.id);
+                                        setDeletePaymentName(submission.name);
+                                      }}
+                                      className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-7 h-7 p-0"
+                                      data-ocid={`admin.payments.resolved_delete_button.${ocidIndex}`}
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </Button>
+                                  </div>
                                 )}
                               </TableCell>
                             </TableRow>
@@ -1044,6 +1099,54 @@ export default function AdminPage() {
               </CardContent>
             </Card>
           </TabsContent>
+
+          {/* ── Delete Payment AlertDialog ── */}
+          <AlertDialog
+            open={deletePaymentId !== null}
+            onOpenChange={(open) => {
+              if (!open) {
+                setDeletePaymentId(null);
+                setDeletePaymentName("");
+              }
+            }}
+          >
+            <AlertDialogContent
+              className="bg-card border-border"
+              data-ocid="admin.payments.delete.dialog"
+            >
+              <AlertDialogHeader>
+                <AlertDialogTitle className="font-display font-bold text-foreground">
+                  Delete Payment Record
+                </AlertDialogTitle>
+                <AlertDialogDescription className="font-body text-muted-foreground">
+                  Delete this payment record for{" "}
+                  <span className="font-semibold text-foreground">
+                    "{deletePaymentName}"
+                  </span>
+                  ? This removes it from view.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel
+                  className="font-ui border-border"
+                  data-ocid="admin.payments.delete.cancel_button"
+                >
+                  Cancel
+                </AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleConfirmDeletePayment}
+                  disabled={deletePaymentMutation.isPending}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-ui"
+                  data-ocid="admin.payments.delete.confirm_button"
+                >
+                  {deletePaymentMutation.isPending ? (
+                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
+                  ) : null}
+                  {deletePaymentMutation.isPending ? "Deleting..." : "Delete"}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
 
           {/* ── VIDEOS TAB ── */}
           <TabsContent value="videos">

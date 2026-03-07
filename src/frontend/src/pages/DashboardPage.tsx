@@ -7,8 +7,10 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
   Check,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Clock,
   Copy,
   Crown,
   Lock,
@@ -17,13 +19,19 @@ import {
   TrendingUp,
   Users,
   Wallet,
+  XCircle,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
 import type { ReferralNode } from "../backend.d";
+import { PaymentStatus } from "../backend.d";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
-import { useReferralTreeByCode, useUserByPhone } from "../hooks/useQueries";
+import {
+  useMyPaymentSubmissions,
+  useReferralTreeByCode,
+  useUserByPhone,
+} from "../hooks/useQueries";
 
 // ─── Tree Node Component ──────────────────────────────────────────────────────
 
@@ -141,6 +149,11 @@ export default function DashboardPage() {
   const { data: referralTree, isLoading: treeLoading } = useReferralTreeByCode(
     userProfile?.referralCode ?? null,
   );
+  const { data: mySubmissions } = useMyPaymentSubmissions(phoneAuth.phone);
+  const latestSubmission =
+    mySubmissions && mySubmissions.length > 0
+      ? mySubmissions[mySubmissions.length - 1]
+      : null;
 
   const isLoading = userLoading;
 
@@ -206,7 +219,7 @@ export default function DashboardPage() {
             </AlertDescription>
           </Alert>
           <Button
-            onClick={() => navigate({ to: "/register" })}
+            onClick={() => navigate({ to: "/register", search: {} })}
             className="bg-primary text-primary-foreground"
             data-ocid="dashboard.register.button"
           >
@@ -244,6 +257,101 @@ export default function DashboardPage() {
           )}
         </p>
       </motion.div>
+
+      {/* Payment Status */}
+      {latestSubmission && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.08 }}
+          data-ocid="dashboard.payment_status.card"
+        >
+          <Card
+            className={`card-premium border-l-4 ${
+              latestSubmission.status === PaymentStatus.approved
+                ? "border-l-green-500"
+                : latestSubmission.status === PaymentStatus.rejected
+                  ? "border-l-red-500"
+                  : "border-l-amber-500"
+            }`}
+          >
+            <CardContent className="p-5">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                      latestSubmission.status === PaymentStatus.approved
+                        ? "bg-green-500/15"
+                        : latestSubmission.status === PaymentStatus.rejected
+                          ? "bg-red-500/15"
+                          : "bg-amber-500/15"
+                    }`}
+                  >
+                    {latestSubmission.status === PaymentStatus.approved ? (
+                      <CheckCircle2 className="w-5 h-5 text-green-400" />
+                    ) : latestSubmission.status === PaymentStatus.rejected ? (
+                      <XCircle className="w-5 h-5 text-red-400" />
+                    ) : (
+                      <Clock className="w-5 h-5 text-amber-400" />
+                    )}
+                  </div>
+                  <div>
+                    <div className="font-ui font-semibold text-sm text-foreground">
+                      Payment Status
+                    </div>
+                    <div className="text-xs text-muted-foreground font-body mt-0.5">
+                      UTR: {latestSubmission.utr} · ₹{latestSubmission.amount}
+                    </div>
+                    <div className="text-xs text-muted-foreground/60 font-body mt-0.5">
+                      Submitted:{" "}
+                      {new Date(
+                        Number(latestSubmission.timestamp) / 1_000_000,
+                      ).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                        year: "numeric",
+                      })}
+                    </div>
+                  </div>
+                </div>
+                <Badge
+                  className={`shrink-0 font-ui text-xs ${
+                    latestSubmission.status === PaymentStatus.approved
+                      ? "bg-green-500/20 text-green-400 border-green-500/30"
+                      : latestSubmission.status === PaymentStatus.rejected
+                        ? "bg-red-500/20 text-red-400 border-red-500/30"
+                        : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                  }`}
+                  variant="outline"
+                  data-ocid="dashboard.payment_status.badge"
+                >
+                  {latestSubmission.status === PaymentStatus.approved
+                    ? "Approved"
+                    : latestSubmission.status === PaymentStatus.rejected
+                      ? "Rejected"
+                      : "Pending Review"}
+                </Badge>
+              </div>
+              {latestSubmission.status === PaymentStatus.rejected && (
+                <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <p className="text-xs text-red-400 font-body">
+                    Your payment was rejected. Please contact admin or resubmit
+                    with the correct details.
+                  </p>
+                </div>
+              )}
+              {latestSubmission.status === PaymentStatus.pending && (
+                <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <p className="text-xs text-amber-400/80 font-body">
+                    Your payment is being reviewed. You'll get access once admin
+                    approves it.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

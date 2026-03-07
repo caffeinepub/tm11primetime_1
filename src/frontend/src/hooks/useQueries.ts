@@ -97,6 +97,22 @@ export function useTransactions(userId: bigint | null) {
   });
 }
 
+export function useMyPaymentSubmissions(phone: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<PaymentSubmission[]>({
+    queryKey: ["myPaymentSubmissions", phone],
+    queryFn: async () => {
+      if (!actor || !phone) return [];
+      try {
+        return await actor.getMyPaymentSubmissions();
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && !!phone,
+  });
+}
+
 // ─── Videos ──────────────────────────────────────────────────────────────────
 
 export function useAllVideos() {
@@ -146,7 +162,8 @@ export function useAllUsers(isAdminReady = false) {
       if (!actor) return [];
       try {
         return await actor.getAllUsersWithPassword("aakbn@1014");
-      } catch {
+      } catch (err) {
+        console.error("[useAllUsers] Failed to fetch users:", err);
         return [];
       }
     },
@@ -175,7 +192,11 @@ export function useAllPaymentSubmissions(isAdminReady = false) {
       if (!actor) return [];
       try {
         return await actor.getAllPaymentSubmissionsWithPassword("aakbn@1014");
-      } catch {
+      } catch (err) {
+        console.error(
+          "[useAllPaymentSubmissions] Failed to fetch payments:",
+          err,
+        );
         return [];
       }
     },
@@ -474,6 +495,23 @@ export function useSaveCallerUserProfileMutation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["callerUserProfile"] });
+    },
+  });
+}
+
+export function useDeletePaymentSubmissionMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (submissionId: bigint) => {
+      if (!actor) throw new Error("Not connected");
+      await actor.deletePaymentSubmissionWithPassword(
+        "aakbn@1014",
+        submissionId,
+      );
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allPaymentSubmissions"] });
     },
   });
 }

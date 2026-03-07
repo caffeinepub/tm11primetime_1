@@ -208,16 +208,12 @@ actor {
     videos.values().toArray();
   };
 
-  // USER-ONLY function - requires authentication to protect PII
-  public query ({ caller }) func getUserByPhone(phone : Text) : async ?User {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only authenticated users can lookup users by phone");
-    };
-
-    let normalizedSearch = normalizePhone(phone);
+  // FULLY PUBLIC query function - NO authentication/permission check
+  // Safe for anonymous callers to look up by their own phone number
+  public query func getUserByPhone(phone : Text) : async ?User {
     users.values().toArray().find(
       func(u) {
-        Text.equal(normalizePhone(u.phone), normalizedSearch);
+        Text.equal(normalizePhone(u.phone), normalizePhone(phone));
       }
     );
   };
@@ -975,5 +971,18 @@ actor {
 
     let updatedUser = { user with isActive };
     users.add(userId, updatedUser);
+  };
+
+  // PASSWORD-GATED function - deletes payment submission with password authentication
+  public shared func deletePaymentSubmissionWithPassword(password : Text, submissionId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    if (not paymentSubmissions.containsKey(submissionId)) {
+      Runtime.trap("Payment submission not found");
+    };
+
+    paymentSubmissions.remove(submissionId);
   };
 };

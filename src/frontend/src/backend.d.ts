@@ -87,6 +87,7 @@ export interface backendInterface {
     addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     claimFirstAdmin(): Promise<void>;
+    deletePaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
     deleteUser(userId: bigint): Promise<void>;
     deleteUserWithPassword(password: string, userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;

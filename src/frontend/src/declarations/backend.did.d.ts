@@ -90,6 +90,10 @@ export interface _SERVICE {
   >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
   'claimFirstAdmin' : ActorMethod<[], undefined>,
+  'deletePaymentSubmissionWithPassword' : ActorMethod<
+    [string, bigint],
+    undefined
+  >,
   'deleteUser' : ActorMethod<[bigint], undefined>,
   'deleteUserWithPassword' : ActorMethod<[string, bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,

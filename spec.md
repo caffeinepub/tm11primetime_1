@@ -2,35 +2,30 @@
 
 ## Current State
 
-Full-stack membership + referral app. Backend uses Motoko with principal-based authorization from the `MixinAuthorization` component. Frontend uses React + TypeScript with phone-number-based login (no Internet Identity for regular users) and a password-based admin panel (password: `aakbn@1014`, stored in `localStorage`).
+Phone-based registration and login system with UPI payment, 15-level referral earnings, premium video library, wallet, and admin panel (password-based).
 
-**Core bug:** The admin panel login is password-only (no blockchain identity). All backend admin functions (`getAllUsers`, `getAllPaymentSubmissions`, `verifyPaymentSubmission`, `updateUser`, `deleteUser`, `addVideo`, `deleteVideo`, `updateUserStatus`) require the caller to have the `#admin` role in the blockchain access control system. Since the password-based admin session has no blockchain identity, these calls go out as anonymous principal and get rejected, returning empty results or errors. The admin panel shows Users (0) and no payment submissions even though data exists.
+**Root cause of current bugs:**
+1. `getUserByPhone` backend function requires `#user` role permission -- but phone-based users use an anonymous actor (no Internet Identity), so the auth check always fails. This causes: (a) returning users always see the registration form again, and (b) the admin panel cannot find users linked to payments.
+2. `verifyPaymentSubmissionWithPassword` approval logic tries `users.get(submission.userId)` first -- but for users registered via anonymous actor, the userId stored in the submission may be 0 or wrong, so it falls back to phone lookup. The phone lookup itself works, but the issue is that `getUserByPhone` being auth-gated means the registration step fails with "Phone number already registered" after the first registration attempt (the user IS saved but can't be found by anonymous actors on subsequent logins).
 
 ## Requested Changes (Diff)
 
 ### Add
-- New backend functions gated by admin password text parameter (not principal):
-  - `getAllUsersWithPassword(password)` -- returns all users if password matches
-  - `getAllPaymentSubmissionsWithPassword(password)` -- returns all payment submissions if password matches
-  - `verifyPaymentSubmissionWithPassword(password, submissionId, action)` -- approves or rejects payment; on approval, correctly finds user by phone when userId=0 (user registered after submission), credits Rs.150 joining bonus, distributes level earnings up to 15 levels
-  - `updateUserWithPassword(password, userId, name, email, phone, isActive)` -- updates user
-  - `deleteUserWithPassword(password, userId)` -- deletes user and cleans up all related data
-  - `addVideoWithPassword(password, title, category, url, description, duration)` -- adds video
-  - `deleteVideoWithPassword(password, videoId)` -- deletes video
-  - `updateUserStatusWithPassword(password, userId, isActive)` -- toggles user active status
-  - `getAllVideosPublic()` -- public query, no auth, returns all videos (for admin panel video tab)
-- The admin password is hardcoded as `"aakbn@1014"` in the backend
+- New public (no auth) backend function `getUserByPhonePublic(phone: Text)` that returns a User without any permission check -- safe for anonymous callers, used for phone-based login
+- Password-gated `deletePaymentSubmissionWithPassword(password: Text, submissionId: Nat)` function to permanently delete payment records from backend (not just hide them in localStorage)
 
 ### Modify
-- Frontend `useQueries.ts`: update `useAllUsers`, `useAllPaymentSubmissions` to call the new `WithPassword` variants, passing `ADMIN_PASSWORD`
-- Frontend `useQueries.ts`: update `useUpdateUserStatusMutation`, `useUpdateUserMutation`, `useDeleteUserMutation`, `useVerifyPaymentSubmissionMutation`, `useAddVideoMutation`, `useDeleteVideoMutation` to call the new `WithPassword` variants
-- Frontend `AdminPage.tsx`: `useAllVideos` should use `getAllVideosPublic` instead of `getAllVideos` (which is restricted to paid users)
+- `getUserByPhone` -- make it fully public (remove the `#user` permission check), since phone is the user's own identifier for lookup, and restricting it to authenticated users breaks the phone-based login flow
+- `verifyPaymentSubmissionWithPassword` -- ensure it always resolves the user by phone as fallback when userId is 0, and updates the submission's userId to the found user's id before approving
+- `getAllUsersWithPassword` -- keep as-is (already works correctly)
+- `getAllPaymentSubmissionsWithPassword` -- keep as-is (already works correctly)
 
 ### Remove
 - Nothing removed
 
 ## Implementation Plan
 
-1. Regenerate Motoko backend with all existing functions preserved plus new password-gated admin functions and public video getter
-2. Update `useQueries.ts` to use the new password-gated function calls for admin operations
-3. Validate (typecheck + build) and deploy
+1. Regenerate backend Motoko with `getUserByPhone` made public (no caller auth check), add `getUserByPhonePublic` as alias, and add `deletePaymentSubmissionWithPassword`
+2. Update `useQueries.ts`: add `useDeletePaymentSubmissionMutation` that calls the new backend function
+3. Update `AdminPage.tsx`: replace localStorage-based payment hiding with real backend deletion using the new mutation
+4. Ensure `useAllUsers` and `useAllPaymentSubmissions` hooks still use password-gated functions (already correct)
