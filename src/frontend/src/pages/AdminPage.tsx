@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
   BarChart3,
@@ -60,7 +61,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../backend.d";
 import {
@@ -241,6 +242,20 @@ export default function AdminPage() {
     setIsAdminLoggedIn(true);
   };
 
+  // Force-refetch users and payments immediately after admin login
+  useEffect(() => {
+    if (isAdminLoggedIn) {
+      void queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["allPaymentSubmissions"],
+      });
+      setTimeout(() => {
+        void refetchUsers();
+        void refetchPayments();
+      }, 300);
+    }
+  }, [isAdminLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const handleLogout = () => {
     localStorage.removeItem(ADMIN_SESSION_KEY);
     setIsAdminLoggedIn(false);
@@ -260,6 +275,8 @@ export default function AdminPage() {
     isLoading: paymentsLoading,
     refetch: refetchPayments,
   } = useAllPaymentSubmissions(isAdminLoggedIn);
+
+  const queryClient = useQueryClient();
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
   const updateUserMutation = useUpdateUserMutation();

@@ -11,17 +11,29 @@ import type {
 } from "../backend.d";
 import { useActor } from "./useActor";
 
+// ─── Phone normalization ──────────────────────────────────────────────────────
+// Strip +, spaces, dashes, and Indian country code prefix so both
+// "+919748465569" and "9748465569" resolve to the same 10-digit number.
+function normalizePhoneForQuery(raw: string | null): string | null {
+  if (!raw) return null;
+  let digits = raw.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return digits || null;
+}
+
 // ─── User ────────────────────────────────────────────────────────────────────
 
 export function useUserByPhone(phone: string | null) {
   const { actor, isFetching } = useActor();
+  const normalizedPhone = normalizePhoneForQuery(phone);
   return useQuery<User | null>({
-    queryKey: ["userByPhone", phone],
+    queryKey: ["userByPhone", normalizedPhone],
     queryFn: async () => {
-      if (!actor || !phone) return null;
-      return actor.getUserByPhone(phone);
+      if (!actor || !normalizedPhone) return null;
+      return actor.getUserByPhone(normalizedPhone);
     },
-    enabled: !!actor && !isFetching && !!phone,
+    enabled: !!actor && !isFetching && !!normalizedPhone,
   });
 }
 

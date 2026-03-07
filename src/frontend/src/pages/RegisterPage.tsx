@@ -21,7 +21,7 @@ import {
   User,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { useActor } from "../hooks/useActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
@@ -31,6 +31,21 @@ import {
 } from "../hooks/useQueries";
 
 const UPI_ID = "yespay.bizsbiz12758@yesbankltd";
+
+// Normalize phone: strip +, spaces, dashes, country code prefix (91 for India)
+function normalizePhone(raw: string): string {
+  // Remove all non-digit characters
+  let digits = raw.replace(/\D/g, "");
+  // Strip leading Indian country code: 91XXXXXXXXXX -> XXXXXXXXXX
+  if (digits.length === 12 && digits.startsWith("91")) {
+    digits = digits.slice(2);
+  }
+  // Strip leading 0
+  if (digits.length === 11 && digits.startsWith("0")) {
+    digits = digits.slice(1);
+  }
+  return digits;
+}
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -80,42 +95,48 @@ export default function RegisterPage() {
   const registerMutation = useRegisterMutation();
   const submitPaymentProofMutation = useSubmitPaymentProofMutation();
 
-  // If user is already logged in (phone saved), check their payment status
-  useEffect(() => {
-    if (!phoneAuth.isLoggedIn || !phoneAuth.phone) return;
-    if (!actor || actorFetching) return;
+  // If user has a stored phone in localStorage, auto-check their status when actor is ready
+  const storedPhoneRef = useRef(phoneAuth.phone);
+  const initialStepRef = useRef(initialStep);
+  const phoneAuthRef = useRef(phoneAuth);
+  phoneAuthRef.current = phoneAuth;
 
+  useEffect(() => {
+    if (!actor || actorFetching) return;
+    if (initialStepRef.current === "payment") return; // already on payment step, don't auto-redirect
+    const storedPhone = storedPhoneRef.current;
+    if (!storedPhone) return; // no stored session, user must enter phone manually
+
+    // Auto-login: user has a stored session, verify and redirect
+    const normalizedStoredPhone = normalizePhone(storedPhone);
+    setFormMode("checking");
     actor
-      .getUserByPhone(phoneAuth.phone)
+      .getUserByPhone(normalizedStoredPhone)
       .then((user) => {
         if (!user) {
-          // Not registered yet — stay on form step
+          // Session is stale — clear it and show clean phone form
+          phoneAuthRef.current.logout();
+          setFormMode("phone");
           return;
         }
+        // Registered — refresh session and redirect
+        phoneAuthRef.current.login(user.phone, user.id, user.name);
         if (user.isPaid) {
           navigate({ to: "/dashboard" });
         } else {
-          // Registered but not paid — go to payment step
-          setStep("payment");
           setUtrForm((prev) => ({
             ...prev,
-            userName: user.name || phoneAuth.userName || "",
-            phone: user.phone || phoneAuth.phone || "",
+            userName: user.name || phoneAuthRef.current.userName || "",
+            phone: user.phone || storedPhone,
           }));
+          setStep("payment");
         }
       })
       .catch(() => {
-        // getUserByPhone failed (e.g. Unauthorized on anonymous actor) — stay on form
-        // user can still register or login manually
+        // Error — fall back to phone entry
+        setFormMode("phone");
       });
-  }, [
-    phoneAuth.isLoggedIn,
-    phoneAuth.phone,
-    phoneAuth.userName,
-    actor,
-    actorFetching,
-    navigate,
-  ]);
+  }, [actor, actorFetching, navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
@@ -124,48 +145,66 @@ export default function RegisterPage() {
 
   // Phase 1: User entered phone, check if they exist
   const handlePhoneCheck = async () => {
-    if (!form.phone.trim()) {
+    const rawPhone = form.phone.trim();
+    if (!rawPhone) {
       setError("Please enter your mobile number.");
       return;
     }
+    const phone = normalizePhone(rawPhone);
 
     setError(null);
     setFormMode("checking");
 
-    if (actor) {
-      try {
-        const existingUser = await actor.getUserByPhone(form.phone.trim());
-        if (existingUser) {
-          // User already registered — log them in directly
-          phoneAuth.login(
-            existingUser.phone,
-            existingUser.id,
-            existingUser.name,
-          );
-          if (existingUser.isPaid) {
-            navigate({ to: "/dashboard" });
-          } else {
-            setUtrForm((prev) => ({
-              ...prev,
-              userName: existingUser.name || "",
-              phone: existingUser.phone || form.phone,
-            }));
-            setStep("payment");
+    // Retry up to 3 times if actor is not ready yet
+    let attempts = 0;
+    const maxAttempts = 3;
+    while (attempts < maxAttempts) {
+      const currentActor = actor;
+      if (currentActor) {
+        try {
+          const existingUser = await currentActor.getUserByPhone(phone);
+          if (existingUser) {
+            // User already registered — log them in directly, no error shown
+            phoneAuth.login(
+              existingUser.phone,
+              existingUser.id,
+              existingUser.name,
+            );
+            if (existingUser.isPaid) {
+              navigate({ to: "/dashboard" });
+            } else {
+              setUtrForm((prev) => ({
+                ...prev,
+                userName: existingUser.name || "",
+                phone: existingUser.phone || phone,
+              }));
+              setStep("payment");
+            }
+            return;
           }
+          // User not found — new user, show registration fields
+          setFormMode("details");
+          return;
+        } catch {
+          // Network/server error — retry
+          attempts++;
+          if (attempts < maxAttempts) {
+            await new Promise((r) => setTimeout(r, 800));
+            continue;
+          }
+          setFormMode("phone");
+          setError("Could not connect to the server. Please try again.");
           return;
         }
-        // User not found — new user, show registration fields
-        setFormMode("details");
-        return;
-      } catch {
-        // getUserByPhone failed — treat as new user and show registration fields
-        setFormMode("details");
-        return;
       }
+      // Actor not ready yet — wait briefly and retry
+      attempts++;
+      await new Promise((r) => setTimeout(r, 600));
     }
 
-    // Actor not available — show registration fields anyway (new user assumption)
-    setFormMode("details");
+    // Still no actor after retries
+    setFormMode("phone");
+    setError("Could not connect to the server. Please try again in a moment.");
   };
 
   // Phase 2: User is new, submit full registration form
@@ -177,22 +216,23 @@ export default function RegisterPage() {
 
     setError(null);
 
+    const normalizedPhone = normalizePhone(form.phone);
     try {
       await registerMutation.mutateAsync({
         name: form.name,
         email: form.email,
-        phone: form.phone,
+        phone: normalizedPhone,
         referredBy: form.referredBy,
       });
 
       // Save phone session after register
-      phoneAuth.login(form.phone, null, form.name);
+      phoneAuth.login(normalizedPhone, null, form.name);
 
       setStep("payment");
       setUtrForm((prev) => ({
         ...prev,
         userName: form.name,
-        phone: form.phone,
+        phone: normalizedPhone,
       }));
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Registration failed";
@@ -204,7 +244,9 @@ export default function RegisterPage() {
       ) {
         if (actor) {
           try {
-            const existingUser = await actor.getUserByPhone(form.phone.trim());
+            const existingUser = await actor.getUserByPhone(
+              normalizePhone(form.phone.trim()),
+            );
             if (existingUser) {
               phoneAuth.login(
                 existingUser.phone,
@@ -227,14 +269,11 @@ export default function RegisterPage() {
             // ignore
           }
         }
-        // Auto-login: just use the phone number they entered
-        phoneAuth.login(form.phone, null, form.name || "User");
-        setUtrForm((prev) => ({
-          ...prev,
-          userName: form.name || "User",
-          phone: form.phone,
-        }));
-        setStep("payment");
+        // Lookup failed — reset to phone mode and let them try again cleanly
+        setFormMode("phone");
+        setError(
+          "Could not complete login. Please tap 'Login / Continue' again.",
+        );
         return;
       }
 
