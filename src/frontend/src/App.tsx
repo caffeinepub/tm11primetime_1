@@ -47,8 +47,11 @@ const indexRoute = createRoute({
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/register",
-  validateSearch: (search: Record<string, unknown>): { step?: string } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { step?: string; ref?: string } => ({
     step: (search.step as string | undefined) ?? undefined,
+    ref: (search.ref as string | undefined) ?? undefined,
   }),
   component: RegisterPage,
 });

@@ -20,6 +20,28 @@ import { useState } from "react";
 import { useActor } from "../hooks/useActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
+// Normalize phone: strip non-digits, remove leading country code 91 or 0
+function normalizePhone(raw: string): string {
+  let digits = raw.replace(/\D/g, "");
+  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
+  return digits;
+}
+
+// Generate all candidate phone formats the backend may have stored
+function phoneVariants(raw: string): string[] {
+  const digits10 = normalizePhone(raw);
+  return [
+    ...new Set([
+      digits10,
+      `91${digits10}`,
+      `+91${digits10}`,
+      `+${digits10}`,
+      raw.trim(),
+    ]),
+  ];
+}
+
 const LEVEL_EARNINGS = [
   { level: 1, amount: "₹10" },
   { level: 2, amount: "₹5" },
@@ -80,19 +102,21 @@ export default function LandingPage() {
       setLoginLoading(true);
       setLoginError(null);
 
+      // Try all phone number formats the backend may have stored
+      const variants = phoneVariants(trimmed);
       let match: import("../backend.d").User | null = null;
 
-      try {
-        // Try to look up user by phone -- may fail with "Unauthorized" if backend requires auth
-        match = await actor.getUserByPhone(trimmed);
-      } catch {
-        // If getUserByPhone fails (e.g. Unauthorized), treat as new/unknown user → go to register
-        navigate({ to: "/register", search: {} });
-        return;
+      for (const variant of variants) {
+        try {
+          match = await actor.getUserByPhone(variant);
+          if (match) break;
+        } catch {
+          // If one variant fails, continue trying others
+        }
       }
 
       if (!match) {
-        // No user found → new user, go register
+        // No user found with any variant → new user, go register
         navigate({ to: "/register", search: {} });
         return;
       }

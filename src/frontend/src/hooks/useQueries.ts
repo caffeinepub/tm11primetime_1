@@ -22,6 +22,17 @@ function normalizePhoneForQuery(raw: string | null): string | null {
   return digits || null;
 }
 
+// Generate all candidate phone formats to try in order.
+// The backend may have stored the number in any of these formats
+// (since the backend normalizePhone doesn't strip + or country code).
+function phoneVariantsForQuery(raw: string | null): string[] {
+  if (!raw) return [];
+  const digits10 = normalizePhoneForQuery(raw) ?? raw;
+  const with91 = `91${digits10}`;
+  const withPlus91 = `+91${digits10}`;
+  return [...new Set([digits10, with91, withPlus91, raw.trim()])];
+}
+
 // ─── User ────────────────────────────────────────────────────────────────────
 
 export function useUserByPhone(phone: string | null) {
@@ -30,8 +41,14 @@ export function useUserByPhone(phone: string | null) {
   return useQuery<User | null>({
     queryKey: ["userByPhone", normalizedPhone],
     queryFn: async () => {
-      if (!actor || !normalizedPhone) return null;
-      return actor.getUserByPhone(normalizedPhone);
+      if (!actor || !phone) return null;
+      // Try multiple formats since backend may store phone in any format
+      const variants = phoneVariantsForQuery(phone);
+      for (const variant of variants) {
+        const user = await actor.getUserByPhone(variant);
+        if (user) return user;
+      }
+      return null;
     },
     enabled: !!actor && !isFetching && !!normalizedPhone,
   });

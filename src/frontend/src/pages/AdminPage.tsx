@@ -59,9 +59,10 @@ import {
   Trash2,
   Users,
   XCircle,
+  Zap,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../backend.d";
 import {
@@ -242,20 +243,6 @@ export default function AdminPage() {
     setIsAdminLoggedIn(true);
   };
 
-  // Force-refetch users and payments immediately after admin login
-  useEffect(() => {
-    if (isAdminLoggedIn) {
-      void queryClient.invalidateQueries({ queryKey: ["allUsers"] });
-      void queryClient.invalidateQueries({
-        queryKey: ["allPaymentSubmissions"],
-      });
-      setTimeout(() => {
-        void refetchUsers();
-        void refetchPayments();
-      }, 300);
-    }
-  }, [isAdminLoggedIn]); // eslint-disable-line react-hooks/exhaustive-deps
-
   const handleLogout = () => {
     localStorage.removeItem(ADMIN_SESSION_KEY);
     setIsAdminLoggedIn(false);
@@ -276,7 +263,22 @@ export default function AdminPage() {
     refetch: refetchPayments,
   } = useAllPaymentSubmissions(isAdminLoggedIn);
 
+  // queryClient MUST be declared before the useEffect that uses it
   const queryClient = useQueryClient();
+
+  // Force-refetch users and payments immediately after admin login
+  useEffect(() => {
+    if (isAdminLoggedIn) {
+      void queryClient.invalidateQueries({ queryKey: ["allUsers"] });
+      void queryClient.invalidateQueries({
+        queryKey: ["allPaymentSubmissions"],
+      });
+      setTimeout(() => {
+        void refetchUsers();
+        void refetchPayments();
+      }, 300);
+    }
+  }, [isAdminLoggedIn, queryClient, refetchUsers, refetchPayments]);
 
   const updateUserStatusMutation = useUpdateUserStatusMutation();
   const updateUserMutation = useUpdateUserMutation();
@@ -306,6 +308,120 @@ export default function AdminPage() {
   const deletePaymentMutation = useDeletePaymentSubmissionMutation();
   const [deletePaymentId, setDeletePaymentId] = useState<bigint | null>(null);
   const [deletePaymentName, setDeletePaymentName] = useState("");
+
+  // ── Auto-Approve state ─────────────────────────────────────────────────────
+  const [autoApproveEnabled, setAutoApproveEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("admin_auto_approve") === "true";
+  });
+  const autoApproveIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const isProcessingRef = useRef<boolean>(false);
+
+  // ── Auto-Approve polling effect ────────────────────────────────────────────
+  useEffect(() => {
+    if (!autoApproveEnabled || !isAdminLoggedIn) {
+      if (autoApproveIntervalRef.current !== null) {
+        clearInterval(autoApproveIntervalRef.current);
+        autoApproveIntervalRef.current = null;
+      }
+      return;
+    }
+
+    const processAutoApproval = async () => {
+      if (isProcessingRef.current) return;
+      isProcessingRef.current = true;
+
+      try {
+        const result = await refetchPayments();
+        const submissions = result.data;
+        if (!submissions || submissions.length === 0) return;
+
+        // Collect UTRs already approved to detect duplicates
+        const approvedUtrs = new Set<string>();
+        for (const sub of submissions) {
+          const statusRaw = sub.status;
+          const statusStr =
+            typeof statusRaw === "object" && statusRaw !== null
+              ? (Object.keys(statusRaw as object)[0] ?? "pending")
+              : String(statusRaw);
+          if (statusStr === "approved") {
+            approvedUtrs.add(sub.utr.trim().toLowerCase());
+          }
+        }
+
+        // Process each pending submission
+        for (const sub of submissions) {
+          const statusRaw = sub.status;
+          const statusStr =
+            typeof statusRaw === "object" && statusRaw !== null
+              ? (Object.keys(statusRaw as object)[0] ?? "pending")
+              : String(statusRaw);
+
+          if (statusStr !== "pending") continue;
+
+          const utr = sub.utr.trim();
+          const amount = sub.amount.trim();
+
+          // Validate UTR: must be exactly 12 digits
+          const utrValid = /^\d{12}$/.test(utr);
+          // Validate amount: must equal "118"
+          const amountValid = amount === "118";
+          // Check for duplicate UTR among already-approved submissions
+          const isDuplicateUtr = approvedUtrs.has(utr.toLowerCase());
+
+          let rejectionReason = "";
+          if (!utrValid) rejectionReason = "UTR must be exactly 12 digits";
+          else if (!amountValid) rejectionReason = "Amount must be ₹118";
+          else if (isDuplicateUtr) rejectionReason = "Duplicate UTR number";
+
+          const allValid = utrValid && amountValid && !isDuplicateUtr;
+
+          try {
+            if (allValid) {
+              await verifyPaymentMutation.mutateAsync({
+                submissionId: sub.id,
+                action: "approve",
+              });
+              approvedUtrs.add(utr.toLowerCase());
+              toast.success(`Auto-approved payment for ${sub.name}`);
+            } else {
+              await verifyPaymentMutation.mutateAsync({
+                submissionId: sub.id,
+                action: "reject",
+              });
+              toast.error(
+                `Auto-rejected invalid payment for ${sub.name} (${rejectionReason})`,
+              );
+            }
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Processing error";
+            toast.error(`Failed to process payment for ${sub.name}: ${msg}`);
+          }
+        }
+      } finally {
+        isProcessingRef.current = false;
+      }
+    };
+
+    // Run immediately on enable, then every 10 seconds
+    void processAutoApproval();
+    autoApproveIntervalRef.current = setInterval(() => {
+      void processAutoApproval();
+    }, 10_000);
+
+    return () => {
+      if (autoApproveIntervalRef.current !== null) {
+        clearInterval(autoApproveIntervalRef.current);
+        autoApproveIntervalRef.current = null;
+      }
+    };
+  }, [
+    autoApproveEnabled,
+    isAdminLoggedIn,
+    refetchPayments,
+    verifyPaymentMutation,
+  ]);
 
   // ── Show login if not authenticated ──────────────────────────────────────
 
@@ -864,6 +980,84 @@ export default function AdminPage() {
 
           {/* ── PAYMENTS TAB ── */}
           <TabsContent value="payments" data-ocid="admin.payments.panel">
+            {/* Auto-Approve Toggle Card */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+              className="mb-4"
+            >
+              <Card
+                className={`border transition-colors duration-300 ${autoApproveEnabled ? "border-amber-500/40 bg-amber-500/5" : "card-premium"}`}
+                data-ocid="admin.payments.auto_approve.card"
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    {/* Icon */}
+                    <div
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors duration-300 ${autoApproveEnabled ? "bg-amber-500/20 border border-amber-500/30" : "bg-muted border border-border"}`}
+                    >
+                      <Zap
+                        className={`w-5 h-5 transition-colors duration-300 ${autoApproveEnabled ? "text-amber-400" : "text-muted-foreground"}`}
+                      />
+                    </div>
+
+                    {/* Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-3 mb-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-ui font-semibold text-sm text-foreground">
+                            Auto-Approve Payments
+                          </span>
+                          <Badge
+                            variant="outline"
+                            className={`text-xs font-ui font-bold transition-colors duration-300 ${autoApproveEnabled ? "border-green-500/40 text-green-300 bg-green-500/10" : "border-border text-muted-foreground bg-muted/30"}`}
+                          >
+                            {autoApproveEnabled ? "ON" : "OFF"}
+                          </Badge>
+                        </div>
+                        <Switch
+                          checked={autoApproveEnabled}
+                          onCheckedChange={(checked) => {
+                            setAutoApproveEnabled(checked);
+                            localStorage.setItem(
+                              "admin_auto_approve",
+                              String(checked),
+                            );
+                            toast.success(
+                              checked
+                                ? "Auto-approval enabled — polling every 10 seconds"
+                                : "Auto-approval disabled",
+                            );
+                          }}
+                          data-ocid="admin.payments.auto_approve.toggle"
+                        />
+                      </div>
+                      <p className="text-muted-foreground font-body text-xs leading-relaxed mb-1.5">
+                        <span className="font-semibold text-foreground/70">
+                          Validations:
+                        </span>{" "}
+                        UTR must be 12 digits · Amount must be ₹118 · No
+                        duplicate UTR
+                      </p>
+                      {autoApproveEnabled && (
+                        <motion.p
+                          initial={{ opacity: 0, height: 0 }}
+                          animate={{ opacity: 1, height: "auto" }}
+                          exit={{ opacity: 0, height: 0 }}
+                          className="text-amber-400/80 font-body text-xs flex items-center gap-1.5"
+                        >
+                          <Zap className="w-3 h-3 flex-shrink-0" />
+                          When ON, all pending payments are checked every 10
+                          seconds automatically.
+                        </motion.p>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
             <Card className="card-premium">
               <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
                 <div>

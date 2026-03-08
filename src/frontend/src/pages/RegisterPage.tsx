@@ -18,11 +18,12 @@ import {
   Mail,
   Phone,
   Receipt,
-  User,
+  User as UserIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import type { User } from "../backend.d";
 import { useActor } from "../hooks/useActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
@@ -47,6 +48,17 @@ function normalizePhone(raw: string): string {
   return digits;
 }
 
+// Generate all candidate phone formats to try in order.
+// The backend may have stored the number in any of these formats.
+function phoneVariants(raw: string): string[] {
+  const digits10 = normalizePhone(raw);
+  const with91 = `91${digits10}`;
+  const withPlus91 = `+91${digits10}`;
+  const withPlus = `+${digits10}`;
+  // Deduplicate while preserving order
+  return [...new Set([digits10, with91, withPlus91, withPlus, raw.trim()])];
+}
+
 export default function RegisterPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
@@ -56,13 +68,18 @@ export default function RegisterPage() {
   // If redirected with ?step=payment (user is already registered but unpaid),
   // skip straight to the payment step without waiting for the backend check.
   const initialStep =
-    (search as { step?: string }).step === "payment" ? "payment" : "form";
+    (search as { step?: string; ref?: string }).step === "payment"
+      ? "payment"
+      : "form";
+
+  // Pre-fill referral code from URL param ?ref=CODE
+  const initialRef = (search as { step?: string; ref?: string }).ref ?? "";
 
   const [form, setForm] = useState({
     name: phoneAuth.userName ?? "",
     email: "",
     phone: phoneAuth.phone ?? "",
-    referredBy: "",
+    referredBy: initialRef,
   });
   // "phone" = only phone field shown; "details" = new user, show full form; "checking" = checking backend
   const [formMode, setFormMode] = useState<"phone" | "checking" | "details">(
@@ -108,11 +125,17 @@ export default function RegisterPage() {
     if (!storedPhone) return; // no stored session, user must enter phone manually
 
     // Auto-login: user has a stored session, verify and redirect
-    const normalizedStoredPhone = normalizePhone(storedPhone);
+    // Try all phone variants in case the backend stored it in a different format
+    const variants = phoneVariants(storedPhone);
     setFormMode("checking");
-    actor
-      .getUserByPhone(normalizedStoredPhone)
-      .then((user) => {
+
+    (async () => {
+      try {
+        let user: User | null = null;
+        for (const variant of variants) {
+          user = await actor.getUserByPhone(variant);
+          if (user) break;
+        }
         if (!user) {
           // Session is stale — clear it and show clean phone form
           phoneAuthRef.current.logout();
@@ -126,16 +149,16 @@ export default function RegisterPage() {
         } else {
           setUtrForm((prev) => ({
             ...prev,
-            userName: user.name || phoneAuthRef.current.userName || "",
-            phone: user.phone || storedPhone,
+            userName: user!.name || phoneAuthRef.current.userName || "",
+            phone: user!.phone || storedPhone,
           }));
           setStep("payment");
         }
-      })
-      .catch(() => {
+      } catch {
         // Error — fall back to phone entry
         setFormMode("phone");
-      });
+      }
+    })();
   }, [actor, actorFetching, navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -150,61 +173,59 @@ export default function RegisterPage() {
       setError("Please enter your mobile number.");
       return;
     }
-    const phone = normalizePhone(rawPhone);
+    const variants = phoneVariants(rawPhone);
 
     setError(null);
     setFormMode("checking");
 
-    // Retry up to 3 times if actor is not ready yet
-    let attempts = 0;
-    const maxAttempts = 3;
-    while (attempts < maxAttempts) {
-      const currentActor = actor;
-      if (currentActor) {
-        try {
-          const existingUser = await currentActor.getUserByPhone(phone);
-          if (existingUser) {
-            // User already registered — log them in directly, no error shown
-            phoneAuth.login(
-              existingUser.phone,
-              existingUser.id,
-              existingUser.name,
-            );
-            if (existingUser.isPaid) {
-              navigate({ to: "/dashboard" });
-            } else {
-              setUtrForm((prev) => ({
-                ...prev,
-                userName: existingUser.name || "",
-                phone: existingUser.phone || phone,
-              }));
-              setStep("payment");
-            }
-            return;
-          }
-          // User not found — new user, show registration fields
-          setFormMode("details");
-          return;
-        } catch {
-          // Network/server error — retry
-          attempts++;
-          if (attempts < maxAttempts) {
-            await new Promise((r) => setTimeout(r, 800));
-            continue;
-          }
-          setFormMode("phone");
-          setError("Could not connect to the server. Please try again.");
-          return;
-        }
-      }
-      // Actor not ready yet — wait briefly and retry
-      attempts++;
-      await new Promise((r) => setTimeout(r, 600));
+    // Wait for actor to be ready (retry up to 10 times, 800ms apart = up to 8s)
+    let actorReady = actor;
+    for (let i = 0; i < 10 && !actorReady; i++) {
+      await new Promise((r) => setTimeout(r, 800));
+      actorReady = actor;
     }
 
-    // Still no actor after retries
-    setFormMode("phone");
-    setError("Could not connect to the server. Please try again in a moment.");
+    if (!actorReady) {
+      setFormMode("phone");
+      setError(
+        "Could not connect to the server. Please refresh the page and try again.",
+      );
+      return;
+    }
+
+    try {
+      // Try all phone variants — backend may have stored in any format
+      let existingUser: User | null = null;
+      for (const variant of variants) {
+        try {
+          existingUser = await actorReady.getUserByPhone(variant);
+          if (existingUser) break;
+        } catch {
+          // try next variant
+        }
+      }
+
+      if (existingUser) {
+        // User already registered — log them in directly, no error shown
+        phoneAuth.login(existingUser.phone, existingUser.id, existingUser.name);
+        if (existingUser.isPaid) {
+          navigate({ to: "/dashboard" });
+        } else {
+          setUtrForm((prev) => ({
+            ...prev,
+            userName: existingUser!.name || "",
+            phone: existingUser!.phone || variants[0],
+          }));
+          setStep("payment");
+        }
+        return;
+      }
+      // User not found with any variant — new user, show registration fields
+      setFormMode("details");
+    } catch {
+      setFormMode("phone");
+      setError("Could not connect to the server. Please try again.");
+    }
   };
 
   // Phase 2: User is new, submit full registration form
@@ -237,16 +258,20 @@ export default function RegisterPage() {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Registration failed";
 
-      // If "already registered" slips through, try login again
+      // If "already registered" slips through, try login again with all variants
       if (
         msg.toLowerCase().includes("already registered") ||
-        msg.toLowerCase().includes("already exists")
+        msg.toLowerCase().includes("already exists") ||
+        msg.toLowerCase().includes("phone number already")
       ) {
         if (actor) {
           try {
-            const existingUser = await actor.getUserByPhone(
-              normalizePhone(form.phone.trim()),
-            );
+            const variants = phoneVariants(form.phone.trim());
+            let existingUser: User | null = null;
+            for (const variant of variants) {
+              existingUser = await actor.getUserByPhone(variant);
+              if (existingUser) break;
+            }
             if (existingUser) {
               phoneAuth.login(
                 existingUser.phone,
@@ -258,8 +283,8 @@ export default function RegisterPage() {
               } else {
                 setUtrForm((prev) => ({
                   ...prev,
-                  userName: existingUser.name || form.name,
-                  phone: existingUser.phone || form.phone,
+                  userName: existingUser!.name || form.name,
+                  phone: existingUser!.phone || form.phone,
                 }));
                 setStep("payment");
               }
@@ -272,7 +297,7 @@ export default function RegisterPage() {
         // Lookup failed — reset to phone mode and let them try again cleanly
         setFormMode("phone");
         setError(
-          "Could not complete login. Please tap 'Login / Continue' again.",
+          "This number is already registered. Please tap 'Login / Continue' to sign in.",
         );
         return;
       }
@@ -516,7 +541,7 @@ export default function RegisterPage() {
                           Full Name *
                         </Label>
                         <div className="relative">
-                          <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                          <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                           <Input
                             id="name"
                             name="name"
@@ -556,7 +581,7 @@ export default function RegisterPage() {
                           htmlFor="referredBy"
                           className="font-ui text-sm text-foreground/80"
                         >
-                          Referral Code (Optional)
+                          Referral Code{initialRef ? "" : " (Optional)"}
                         </Label>
                         <div className="relative">
                           <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
@@ -564,12 +589,18 @@ export default function RegisterPage() {
                             id="referredBy"
                             name="referredBy"
                             value={form.referredBy}
-                            onChange={handleChange}
+                            onChange={initialRef ? undefined : handleChange}
+                            readOnly={!!initialRef}
                             placeholder="Enter referral code"
-                            className="pl-9 bg-input border-border font-body"
+                            className={`pl-9 bg-input border-border font-body ${initialRef ? "bg-primary/10 border-primary/40 text-primary font-semibold cursor-default" : ""}`}
                             data-ocid="register.referral.input"
                           />
                         </div>
+                        {initialRef && (
+                          <p className="text-xs text-primary font-ui font-medium">
+                            Referral code applied automatically
+                          </p>
+                        )}
                       </div>
 
                       <Button
@@ -874,7 +905,7 @@ export default function RegisterPage() {
                             Your Name *
                           </Label>
                           <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                            <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                             <Input
                               id="utrUserName"
                               name="userName"

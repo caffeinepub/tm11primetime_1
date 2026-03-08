@@ -1,31 +1,31 @@
 # Tm11primeTime
 
 ## Current State
-
-Phone-based registration and login system with UPI payment, 15-level referral earnings, premium video library, wallet, and admin panel (password-based).
-
-**Root cause of current bugs:**
-1. `getUserByPhone` backend function requires `#user` role permission -- but phone-based users use an anonymous actor (no Internet Identity), so the auth check always fails. This causes: (a) returning users always see the registration form again, and (b) the admin panel cannot find users linked to payments.
-2. `verifyPaymentSubmissionWithPassword` approval logic tries `users.get(submission.userId)` first -- but for users registered via anonymous actor, the userId stored in the submission may be 0 or wrong, so it falls back to phone lookup. The phone lookup itself works, but the issue is that `getUserByPhone` being auth-gated means the registration step fails with "Phone number already registered" after the first registration attempt (the user IS saved but can't be found by anonymous actors on subsequent logins).
+- Full membership app with phone-based login, UPI payment flow, 15-level referral matrix, wallet, and premium video library.
+- Admin panel uses password login (`aakbn@1014`) with tabs for Users, Payments, Videos, Stats.
+- Payment submissions are manually approved/rejected by the admin in the Payments tab.
+- Backend has `submitPaymentProof` (public), `verifyPaymentSubmissionWithPassword` (password-gated), and related functions.
+- No auto-approval logic exists.
 
 ## Requested Changes (Diff)
 
 ### Add
-- New public (no auth) backend function `getUserByPhonePublic(phone: Text)` that returns a User without any permission check -- safe for anonymous callers, used for phone-based login
-- Password-gated `deletePaymentSubmissionWithPassword(password: Text, submissionId: Nat)` function to permanently delete payment records from backend (not just hide them in localStorage)
+- **Backend**: `autoApproveEnabled` boolean variable (default `false`) stored in actor state.
+- **Backend**: `setAutoApproveWithPassword(password, enabled)` -- password-gated function to toggle auto-approval on/off.
+- **Backend**: `getAutoApproveStatus(password)` -- password-gated query to read current toggle state.
+- **Backend**: Auto-approval logic inside `submitPaymentProof`: when `autoApproveEnabled == true`, validate the submission (UTR format: exactly 12 digits, amount == "118", no duplicate UTR) and if valid, immediately run approval logic (credit Rs.150 bonus, distribute level earnings, mark isPaid=true, set status=#approved). If validation fails, still store as #rejected with a reason.
+- **Frontend**: Auto-Approve toggle card in the Payments tab header of AdminPage, showing current ON/OFF state. Toggling it calls `setAutoApproveWithPassword`. Shows validation rules as helper text below the toggle.
 
 ### Modify
-- `getUserByPhone` -- make it fully public (remove the `#user` permission check), since phone is the user's own identifier for lookup, and restricting it to authenticated users breaks the phone-based login flow
-- `verifyPaymentSubmissionWithPassword` -- ensure it always resolves the user by phone as fallback when userId is 0, and updates the submission's userId to the found user's id before approving
-- `getAllUsersWithPassword` -- keep as-is (already works correctly)
-- `getAllPaymentSubmissionsWithPassword` -- keep as-is (already works correctly)
+- **Backend**: `submitPaymentProof` -- add auto-approval branch after storing the submission.
+- **Frontend**: AdminPage Payments tab header -- add the auto-approve toggle card between the title and the Refresh button.
 
 ### Remove
-- Nothing removed
+- Nothing removed.
 
 ## Implementation Plan
-
-1. Regenerate backend Motoko with `getUserByPhone` made public (no caller auth check), add `getUserByPhonePublic` as alias, and add `deletePaymentSubmissionWithPassword`
-2. Update `useQueries.ts`: add `useDeletePaymentSubmissionMutation` that calls the new backend function
-3. Update `AdminPage.tsx`: replace localStorage-based payment hiding with real backend deletion using the new mutation
-4. Ensure `useAllUsers` and `useAllPaymentSubmissions` hooks still use password-gated functions (already correct)
+1. Add `autoApproveEnabled` state variable and helper approval function `approvePaymentById` (extracted from `verifyPaymentSubmissionWithPassword`) in `main.mo`.
+2. Add `setAutoApproveWithPassword` and `getAutoApproveStatusWithPassword` backend functions.
+3. Modify `submitPaymentProof` to check `autoApproveEnabled`, validate (UTR 12 digits, amount=="118", no duplicate UTR), and auto-approve or auto-reject.
+4. Add `useAutoApproveStatus` query hook and `useSetAutoApproveMutation` in `useQueries.ts`.
+5. Add auto-approve toggle UI in AdminPage Payments tab header -- Switch component with label, current status badge, and validation rules helper text.
