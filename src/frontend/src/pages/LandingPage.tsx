@@ -16,8 +16,9 @@ import {
   TrendingUp,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
-import { useActor } from "../hooks/useActor";
+import { useRef, useState } from "react";
+import type { backendInterface } from "../backend";
+import { createActorWithConfig } from "../config";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
 // Normalize phone: strip non-digits, remove leading country code 91 or 0
@@ -79,11 +80,20 @@ const features = [
 export default function LandingPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
-  const { actor, isFetching: actorFetching } = useActor();
+  // Keep a cached anonymous actor so we don't recreate it every login attempt
+  const anonActorRef = useRef<backendInterface | null>(null);
 
   const [phone, setPhone] = useState("");
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);
+
+  const getAnonActor = async (): Promise<backendInterface> => {
+    if (anonActorRef.current) return anonActorRef.current;
+    // Create a plain anonymous actor — no identity, no admin token init
+    const actor = await createActorWithConfig();
+    anonActorRef.current = actor;
+    return actor;
+  };
 
   const handleLogin = async () => {
     const trimmed = phone.trim();
@@ -91,16 +101,12 @@ export default function LandingPage() {
       setLoginError("Please enter your mobile number.");
       return;
     }
-    if (!actor || actorFetching) {
-      setLoginError(
-        "App is still loading. Please wait a moment and try again.",
-      );
-      return;
-    }
 
     try {
       setLoginLoading(true);
       setLoginError(null);
+
+      const actor = await getAnonActor();
 
       // Try all phone number formats the backend may have stored
       const variants = phoneVariants(trimmed);
@@ -258,17 +264,13 @@ export default function LandingPage() {
                 <Button
                   className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base glow-gold"
                   onClick={handleLogin}
-                  disabled={loginLoading || actorFetching}
+                  disabled={loginLoading}
                   data-ocid="landing.login.button"
                 >
-                  {loginLoading || actorFetching ? (
+                  {loginLoading ? (
                     <Loader2 className="mr-2 w-4 h-4 animate-spin" />
                   ) : null}
-                  {loginLoading
-                    ? "Logging in..."
-                    : actorFetching
-                      ? "Loading..."
-                      : "Login / Register"}
+                  {loginLoading ? "Logging in..." : "Login / Register"}
                 </Button>
 
                 <p className="text-center text-xs text-muted-foreground font-body">

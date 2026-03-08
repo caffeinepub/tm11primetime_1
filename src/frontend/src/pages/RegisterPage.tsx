@@ -178,9 +178,9 @@ export default function RegisterPage() {
     setError(null);
     setFormMode("checking");
 
-    // Wait for actor to be ready (retry up to 10 times, 800ms apart = up to 8s)
+    // Wait for actor to be ready (retry up to 15 times, 800ms apart = up to 12s)
     let actorReady = actor;
-    for (let i = 0; i < 10 && !actorReady; i++) {
+    for (let i = 0; i < 15 && !actorReady; i++) {
       await new Promise((r) => setTimeout(r, 800));
       actorReady = actor;
     }
@@ -188,43 +188,58 @@ export default function RegisterPage() {
     if (!actorReady) {
       setFormMode("phone");
       setError(
-        "Could not connect to the server. Please refresh the page and try again.",
+        "Could not connect. Please check your internet connection and try again.",
       );
       return;
     }
 
-    try {
-      // Try all phone variants — backend may have stored in any format
-      let existingUser: User | null = null;
-      for (const variant of variants) {
-        try {
-          existingUser = await actorReady.getUserByPhone(variant);
-          if (existingUser) break;
-        } catch {
-          // try next variant
+    // Retry the actual backend call up to 4 times (covers ICP canister "cold start" latency)
+    const MAX_RETRIES = 4;
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      try {
+        // Try all phone variants — backend may have stored in any format
+        let existingUser: User | null = null;
+        for (const variant of variants) {
+          try {
+            existingUser = await actorReady.getUserByPhone(variant);
+            if (existingUser) break;
+          } catch {
+            // try next variant
+          }
         }
-      }
 
-      if (existingUser) {
-        // User already registered — log them in directly, no error shown
-        phoneAuth.login(existingUser.phone, existingUser.id, existingUser.name);
-        if (existingUser.isPaid) {
-          navigate({ to: "/dashboard" });
-        } else {
-          setUtrForm((prev) => ({
-            ...prev,
-            userName: existingUser!.name || "",
-            phone: existingUser!.phone || variants[0],
-          }));
-          setStep("payment");
+        if (existingUser) {
+          // User already registered — log them in directly, no error shown
+          phoneAuth.login(
+            existingUser.phone,
+            existingUser.id,
+            existingUser.name,
+          );
+          if (existingUser.isPaid) {
+            navigate({ to: "/dashboard" });
+          } else {
+            setUtrForm((prev) => ({
+              ...prev,
+              userName: existingUser!.name || "",
+              phone: existingUser!.phone || variants[0],
+            }));
+            setStep("payment");
+          }
+          return;
         }
+        // User not found with any variant — new user, show registration fields
+        setFormMode("details");
         return;
+      } catch (_err) {
+        if (attempt < MAX_RETRIES - 1) {
+          // Wait before retry: 1s, 2s, 3s
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        // All retries exhausted
+        setFormMode("phone");
+        setError("Could not connect to the server. Please try again.");
       }
-      // User not found with any variant — new user, show registration fields
-      setFormMode("details");
-    } catch {
-      setFormMode("phone");
-      setError("Could not connect to the server. Please try again.");
     }
   };
 
