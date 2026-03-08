@@ -47,6 +47,7 @@ import {
   AlertCircle,
   BarChart3,
   CheckCircle,
+  Link as LinkIcon,
   Loader2,
   Lock,
   LogOut,
@@ -109,6 +110,26 @@ const initialFormData: AddVideoFormData = {
   description: "",
   duration: "",
 };
+
+// ── Channel data model (localStorage-only) ────────────────────────────────────
+
+interface Channel {
+  id: string;
+  name: string;
+  url: string;
+}
+
+// ── Admin Watch Time Helper ───────────────────────────────────────────────────
+
+function formatAdminWatchTime(phone: string): string {
+  const raw = localStorage.getItem(`watchTime_${phone}`);
+  const secs = raw ? Number.parseInt(raw, 10) : 0;
+  if (Number.isNaN(secs) || secs === 0) return "—";
+  const h = Math.floor(secs / 3600);
+  const m = Math.floor((secs % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m} min`;
+}
 
 // ── Admin Login Screen ────────────────────────────────────────────────────────
 
@@ -308,6 +329,27 @@ export default function AdminPage() {
   const deletePaymentMutation = useDeletePaymentSubmissionMutation();
   const [deletePaymentId, setDeletePaymentId] = useState<bigint | null>(null);
   const [deletePaymentName, setDeletePaymentName] = useState("");
+
+  // ── Channels state (localStorage) ────────────────────────────────────────
+  const [channels, setChannels] = useState<Channel[]>(() => {
+    try {
+      const raw = localStorage.getItem("admin_channels");
+      return raw ? (JSON.parse(raw) as Channel[]) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [channelForm, setChannelForm] = useState({ name: "", url: "" });
+  const [editingChannelId, setEditingChannelId] = useState<string | null>(null);
+  const [channelFormError, setChannelFormError] = useState<string | null>(null);
+  const [addChannelOpen, setAddChannelOpen] = useState(false);
+  const [deleteChannelId, setDeleteChannelId] = useState<string | null>(null);
+  const [deleteChannelName, setDeleteChannelName] = useState("");
+
+  // Persist channels to localStorage whenever they change
+  useEffect(() => {
+    localStorage.setItem("admin_channels", JSON.stringify(channels));
+  }, [channels]);
 
   // ── Auto-Approve state ─────────────────────────────────────────────────────
   const [autoApproveEnabled, setAutoApproveEnabled] = useState<boolean>(() => {
@@ -650,6 +692,14 @@ export default function AdminPage() {
               Videos ({videos?.length ?? 0})
             </TabsTrigger>
             <TabsTrigger
+              value="channels"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.channels.tab"
+            >
+              <LinkIcon className="w-4 h-4" />
+              Channels ({channels.length})
+            </TabsTrigger>
+            <TabsTrigger
               value="stats"
               className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               data-ocid="admin.stats.tab"
@@ -718,6 +768,7 @@ export default function AdminPage() {
                             "Phone",
                             "Email",
                             "Balance",
+                            "Watch Time",
                             "Paid",
                             "Status",
                             "Actions",
@@ -751,6 +802,11 @@ export default function AdminPage() {
                               </TableCell>
                               <TableCell className="py-3 text-sm font-display font-bold text-green-400">
                                 ₹{(Number(user.walletBalance) / 100).toFixed(2)}
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <span className="font-ui text-xs text-blue-300">
+                                  {formatAdminWatchTime(user.phone)}
+                                </span>
                               </TableCell>
                               <TableCell className="py-3">
                                 {user.isPaid ? (
@@ -1602,6 +1658,318 @@ export default function AdminPage() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── CHANNELS TAB ── */}
+          <TabsContent value="channels">
+            <Card className="card-premium">
+              <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
+                <div>
+                  <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+                    <LinkIcon className="w-5 h-5 text-primary" />
+                    Channel URLs
+                  </CardTitle>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Manage channel links for your platform
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => {
+                    setEditingChannelId(null);
+                    setChannelForm({ name: "", url: "" });
+                    setChannelFormError(null);
+                    setAddChannelOpen(true);
+                  }}
+                  className="bg-primary text-primary-foreground font-ui text-xs"
+                  data-ocid="admin.channels.primary_button"
+                >
+                  <Plus className="w-3.5 h-3.5 mr-1" /> Add Channel
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {/* ── Inline Add / Edit Form ── */}
+                {addChannelOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -8 }}
+                    transition={{ duration: 0.25 }}
+                    className="border border-primary/20 rounded-xl p-4 bg-primary/5 space-y-3"
+                  >
+                    <h3 className="font-ui font-semibold text-sm text-foreground">
+                      {editingChannelId ? "Edit Channel" : "Add New Channel"}
+                    </h3>
+                    {channelFormError && (
+                      <Alert
+                        variant="destructive"
+                        data-ocid="admin.channels.form.error_state"
+                      >
+                        <AlertCircle className="w-4 h-4" />
+                        <AlertDescription className="font-body text-sm">
+                          {channelFormError}
+                        </AlertDescription>
+                      </Alert>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="channelName"
+                          className="font-ui text-sm text-muted-foreground"
+                        >
+                          Channel Name *
+                        </Label>
+                        <Input
+                          id="channelName"
+                          value={channelForm.name}
+                          onChange={(e) => {
+                            setChannelForm((prev) => ({
+                              ...prev,
+                              name: e.target.value,
+                            }));
+                            setChannelFormError(null);
+                          }}
+                          placeholder="e.g. YouTube Main Channel"
+                          className="bg-input border-border font-body text-sm"
+                          data-ocid="admin.channels.name.input"
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label
+                          htmlFor="channelUrl"
+                          className="font-ui text-sm text-muted-foreground"
+                        >
+                          Channel URL *
+                        </Label>
+                        <Input
+                          id="channelUrl"
+                          value={channelForm.url}
+                          onChange={(e) => {
+                            setChannelForm((prev) => ({
+                              ...prev,
+                              url: e.target.value,
+                            }));
+                            setChannelFormError(null);
+                          }}
+                          placeholder="https://youtube.com/@yourchannel"
+                          className="bg-input border-border font-body text-sm"
+                          data-ocid="admin.channels.url.input"
+                        />
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          const name = channelForm.name.trim();
+                          const url = channelForm.url.trim();
+                          if (!name) {
+                            setChannelFormError("Channel name is required.");
+                            return;
+                          }
+                          if (!url) {
+                            setChannelFormError("Channel URL is required.");
+                            return;
+                          }
+                          if (
+                            !url.startsWith("http://") &&
+                            !url.startsWith("https://")
+                          ) {
+                            setChannelFormError(
+                              "URL must start with http:// or https://",
+                            );
+                            return;
+                          }
+                          if (editingChannelId) {
+                            setChannels((prev) =>
+                              prev.map((ch) =>
+                                ch.id === editingChannelId
+                                  ? { ...ch, name, url }
+                                  : ch,
+                              ),
+                            );
+                            toast.success("Channel updated successfully!");
+                          } else {
+                            setChannels((prev) => [
+                              ...prev,
+                              { id: crypto.randomUUID(), name, url },
+                            ]);
+                            toast.success("Channel added successfully!");
+                          }
+                          setChannelForm({ name: "", url: "" });
+                          setEditingChannelId(null);
+                          setChannelFormError(null);
+                          setAddChannelOpen(false);
+                        }}
+                        className="bg-primary text-primary-foreground font-ui text-xs"
+                        data-ocid="admin.channels.save.button"
+                      >
+                        {editingChannelId ? "Update Channel" : "Save Channel"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setAddChannelOpen(false);
+                          setEditingChannelId(null);
+                          setChannelForm({ name: "", url: "" });
+                          setChannelFormError(null);
+                        }}
+                        className="border-border font-ui text-xs"
+                        data-ocid="admin.channels.cancel_button"
+                      >
+                        Cancel
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+
+                {/* ── Channel List ── */}
+                {channels.length === 0 ? (
+                  <div
+                    className="py-10 text-center"
+                    data-ocid="admin.channels.empty_state"
+                  >
+                    <LinkIcon className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                    <p className="text-muted-foreground font-body text-sm">
+                      No channels added yet.
+                    </p>
+                    <p className="text-muted-foreground font-body text-xs mt-1 opacity-70">
+                      Click "Add Channel" to add your first channel URL.
+                    </p>
+                  </div>
+                ) : (
+                  <ScrollArea className="max-h-[500px]">
+                    <Table data-ocid="admin.channels.table">
+                      <TableHeader>
+                        <TableRow className="border-border hover:bg-transparent">
+                          {["Name", "URL", "Actions"].map((h) => (
+                            <TableHead
+                              key={h}
+                              className="text-muted-foreground font-ui text-xs uppercase tracking-wide"
+                            >
+                              {h}
+                            </TableHead>
+                          ))}
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {channels.map((channel, i) => {
+                          const ocidIndex = i + 1;
+                          return (
+                            <TableRow
+                              key={channel.id}
+                              className="border-border hover:bg-muted/20 transition-colors"
+                              data-ocid={`admin.channels.item.${ocidIndex}`}
+                            >
+                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground max-w-[180px]">
+                                <span className="truncate block">
+                                  {channel.name}
+                                </span>
+                              </TableCell>
+                              <TableCell className="py-3 max-w-[260px]">
+                                <a
+                                  href={channel.url}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-body text-xs text-primary hover:underline truncate block"
+                                >
+                                  {channel.url}
+                                </a>
+                              </TableCell>
+                              <TableCell className="py-3">
+                                <div className="flex items-center gap-1.5">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setEditingChannelId(channel.id);
+                                      setChannelForm({
+                                        name: channel.name,
+                                        url: channel.url,
+                                      });
+                                      setChannelFormError(null);
+                                      setAddChannelOpen(true);
+                                    }}
+                                    className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-8 h-8"
+                                    data-ocid={`admin.channels.edit_button.${ocidIndex}`}
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    onClick={() => {
+                                      setDeleteChannelId(channel.id);
+                                      setDeleteChannelName(channel.name);
+                                    }}
+                                    className="text-muted-foreground hover:text-destructive hover:bg-destructive/10 w-8 h-8"
+                                    data-ocid={`admin.channels.delete_button.${ocidIndex}`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
+                      </TableBody>
+                    </Table>
+                  </ScrollArea>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Delete Channel AlertDialog ── */}
+            <AlertDialog
+              open={deleteChannelId !== null}
+              onOpenChange={(open) => {
+                if (!open) {
+                  setDeleteChannelId(null);
+                  setDeleteChannelName("");
+                }
+              }}
+            >
+              <AlertDialogContent
+                className="bg-card border-border"
+                data-ocid="admin.channels.delete.dialog"
+              >
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="font-display font-bold text-foreground">
+                    Delete Channel
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="font-body text-muted-foreground">
+                    Are you sure you want to delete{" "}
+                    <span className="font-semibold text-foreground">
+                      "{deleteChannelName}"
+                    </span>
+                    ? This action cannot be undone.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel
+                    className="font-ui border-border"
+                    data-ocid="admin.channels.delete.cancel_button"
+                  >
+                    Cancel
+                  </AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={() => {
+                      setChannels((prev) =>
+                        prev.filter((ch) => ch.id !== deleteChannelId),
+                      );
+                      toast.success(`"${deleteChannelName}" deleted.`);
+                      setDeleteChannelId(null);
+                      setDeleteChannelName("");
+                    }}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90 font-ui"
+                    data-ocid="admin.channels.delete.confirm_button"
+                  >
+                    Delete Channel
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           </TabsContent>
 
           {/* ── STATS TAB ── */}

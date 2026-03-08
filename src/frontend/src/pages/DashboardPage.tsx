@@ -19,6 +19,7 @@ import {
   Phone,
   Play,
   Plus,
+  Timer,
   TrendingUp,
   Users,
   Wallet,
@@ -34,6 +35,7 @@ import {
   useMyPaymentSubmissions,
   useReferralTreeByCode,
   useUserByPhone,
+  useWatchHistory,
 } from "../hooks/useQueries";
 
 // ─── Level Earning Rates ──────────────────────────────────────────────────────
@@ -403,6 +405,16 @@ function UserSummaryCard({
   );
 }
 
+// ─── Watch Time Formatter ──────────────────────────────────────────────────────
+
+function formatWatchTime(seconds: number): string {
+  if (seconds === 0) return "0 min";
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m} min`;
+}
+
 // ─── Dashboard Page ───────────────────────────────────────────────────────────
 
 export default function DashboardPage() {
@@ -417,6 +429,10 @@ export default function DashboardPage() {
   const { data: referralTree, isLoading: treeLoading } = useReferralTreeByCode(
     userProfile?.referralCode ?? null,
   );
+  const { data: watchHistory } = useWatchHistory(phoneAuth.userId ?? null);
+  const totalWatchSeconds =
+    watchHistory?.reduce((sum, r) => sum + Number(r.watchedSeconds), 0) ?? 0;
+
   const { data: mySubmissions } = useMyPaymentSubmissions(phoneAuth.phone);
   const latestSubmission =
     mySubmissions && mySubmissions.length > 0
@@ -464,8 +480,8 @@ export default function DashboardPage() {
       <div className="p-6 space-y-6" data-ocid="dashboard.loading_state">
         <Skeleton className="h-24 rounded-xl animate-shimmer" />
         <Skeleton className="h-32 rounded-xl animate-shimmer" />
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          {["s1", "s2", "s3"].map((k) => (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {["s1", "s2", "s3", "s4"].map((k) => (
             <Skeleton key={k} className="h-28 rounded-xl animate-shimmer" />
           ))}
         </div>
@@ -642,7 +658,7 @@ export default function DashboardPage() {
       )}
 
       {/* ── 4. Stats Cards ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {/* Wallet */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
@@ -732,6 +748,35 @@ export default function DashboardPage() {
               </div>
               <p className="text-muted-foreground text-xs font-body mt-1">
                 Total network size
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* Total Watch Time */}
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.225 }}
+        >
+          <Card className="card-premium" data-ocid="dashboard.watchtime.card">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center">
+                  <Timer className="w-5 h-5 text-blue-400" />
+                </div>
+                <Badge
+                  variant="outline"
+                  className="text-xs border-blue-500/30 text-blue-400"
+                >
+                  Watch Time
+                </Badge>
+              </div>
+              <div className="font-display font-black text-3xl text-foreground">
+                {formatWatchTime(totalWatchSeconds)}
+              </div>
+              <p className="text-muted-foreground text-xs font-body mt-1">
+                Total watched
               </p>
             </CardContent>
           </Card>

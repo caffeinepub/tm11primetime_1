@@ -184,6 +184,12 @@ export default function VideoPlayerPage() {
         subscribed,
       });
       setHasSaved(true);
+      // Persist cumulative watch time to localStorage for admin panel display
+      if (phoneAuth.phone) {
+        const key = `watchTime_${phoneAuth.phone}`;
+        const existing = Number.parseInt(localStorage.getItem(key) ?? "0", 10);
+        localStorage.setItem(key, String(existing + watchedSeconds));
+      }
       toast.success("Video completed! Great job watching till the end!", {
         icon: <Trophy className="w-4 h-4 text-primary" />,
       });
@@ -199,6 +205,7 @@ export default function VideoPlayerPage() {
     watchedSeconds,
     subscribed,
     recordProgressMutation,
+    phoneAuth.phone,
   ]);
 
   const progressPercent = video
