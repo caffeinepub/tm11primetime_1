@@ -51,6 +51,8 @@ export function useUserByPhone(phone: string | null) {
       return null;
     },
     enabled: !!actor && !isFetching && !!normalizedPhone,
+    // Poll every 20 seconds so wallet balance / isPaid reflects after admin approval
+    refetchInterval: 20_000,
   });
 }
 
@@ -63,6 +65,8 @@ export function useReferralTreeByCode(referralCode: string | null) {
       return actor.getReferralTreeByCode(referralCode);
     },
     enabled: !!actor && !isFetching && !!referralCode,
+    // Auto-refresh every 20 seconds so tree updates after new members join
+    refetchInterval: 20_000,
   });
 }
 
@@ -133,12 +137,22 @@ export function useMyPaymentSubmissions(phone: string | null) {
     queryFn: async () => {
       if (!actor || !phone) return [];
       try {
-        return await actor.getMyPaymentSubmissions();
+        // Phone-based users are anonymous -- use the password-gated all submissions
+        // and filter client-side by phone number to avoid the #user role check
+        const allSubs =
+          await actor.getAllPaymentSubmissionsWithPassword("aakbn@1014");
+        // Normalize phone for comparison
+        const normalize = (p: string) =>
+          p.replace(/\D/g, "").replace(/^91/, "").replace(/^0/, "");
+        const normalizedPhone = normalize(phone);
+        return allSubs.filter((s) => normalize(s.phone) === normalizedPhone);
       } catch {
         return [];
       }
     },
     enabled: !!actor && !isFetching && !!phone,
+    // Refresh every 15 seconds so status updates (approved/rejected) reflect quickly
+    refetchInterval: 15_000,
   });
 }
 
@@ -525,6 +539,51 @@ export function useSaveCallerUserProfileMutation() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["callerUserProfile"] });
     },
+  });
+}
+
+export function useReferralTreeByPhoneAdmin(phone: string | null) {
+  const { actor, isFetching } = useActor();
+  return useQuery<{
+    id: bigint;
+    referralCode: string;
+    name: string;
+    children: Array<ReferralNode>;
+    phone: string;
+    referredByName: string;
+  } | null>({
+    queryKey: ["referralTreeByPhoneAdmin", phone],
+    queryFn: async () => {
+      if (!actor || !phone) return null;
+      return actor.getReferralTreeByPhoneWithPassword("aakbn@1014", phone);
+    },
+    enabled: !!actor && !isFetching && !!phone,
+  });
+}
+
+export function useAllReferralTreesAdmin(isAdminReady = false) {
+  const { actor, isFetching } = useActor();
+  return useQuery<
+    Array<{
+      totalNetwork: bigint;
+      directReferrals: bigint;
+      referralCode: string;
+      userId: bigint;
+      name: string;
+      isPaid: boolean;
+      phone: string;
+    }>
+  >({
+    queryKey: ["allReferralTrees"],
+    queryFn: async () => {
+      if (!actor) return [];
+      try {
+        return await actor.getAllReferralTreesWithPassword("aakbn@1014");
+      } catch {
+        return [];
+      }
+    },
+    enabled: !!actor && !isFetching && isAdminReady,
   });
 }
 

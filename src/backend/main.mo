@@ -9,6 +9,7 @@ import Int "mo:core/Int";
 import Text "mo:core/Text";
 import Principal "mo:core/Principal";
 import Char "mo:core/Char";
+import List "mo:core/List";
 
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
@@ -66,6 +67,8 @@ actor {
     name : Text;
     referralCode : Text;
     children : [ReferralNode];
+    phone : Text;
+    referredByName : Text;
   };
 
   public type UserProfile = {
@@ -97,6 +100,18 @@ actor {
     phone : Text;
     utr : Text;
     amount : Text;
+  };
+
+  // Common node type for all referral stats (with isPaid and counts)
+  type ReferralStatNode = {
+    id : Nat;
+    name : Text;
+    phone : Text;
+    referralCode : Text;
+    isPaid : Bool;
+    directReferrals : Nat;
+    totalNetwork : Nat;
+    children : [ReferralStatNode];
   };
 
   var nextUserId = 1;
@@ -163,6 +178,16 @@ actor {
       name = user.name;
       referralCode = user.referralCode;
       children = if (level < 15) { childrenNodes } else { [] };
+      phone = user.phone;
+      referredByName = findUserNameByReferralCode(user.referredBy);
+    };
+  };
+
+  func findUserNameByReferralCode(referralCode : Text) : Text {
+    if (Text.equal(referralCode, "")) { return "" };
+    switch (users.values().toArray().find(func(u) { Text.equal(u.referralCode, referralCode) })) {
+      case (null) { "" };
+      case (?user) { user.name };
     };
   };
 
@@ -175,32 +200,123 @@ actor {
     Text.equal(password, ADMIN_PASSWORD);
   };
 
-  // New function: Get referral tree by code (no authentication required as specified)
+  func countNetwork(referralCode : Text) : Nat {
+    let directReferrals = findReferrals(referralCode);
+    var total = directReferrals.size();
+
+    for (userId in directReferrals.values()) {
+      switch (users.get(userId)) {
+        case (?user) {
+          total += countNetwork(user.referralCode);
+        };
+        case (_) {};
+      };
+    };
+    total;
+  };
+
+  // NEW function: get stats for a single user
   public query func getReferralTreeByCode(referralCode : Text) : async {
     id : Nat;
     name : Text;
     referralCode : Text;
+    phone : Text;
+    referredByName : Text;
     children : [ReferralNode];
   } {
-    let user = users.values().toArray().find(
+    // Find user by referral code
+    let userOpt = users.values().toArray().find(
       func(u) {
         Text.equal(u.referralCode, referralCode);
       }
     );
 
-    switch (user) {
+    switch (userOpt) {
+      case (?user) {
+        buildReferralTree(user.id, 0);
+      };
       case (null) {
         {
           id = 0;
           name = "";
           referralCode;
+          phone = "";
+          referredByName = "";
           children = [];
         };
       };
-      case (?u) {
-        buildReferralTree(u.id, 0);
-      };
     };
+  };
+
+  // NEW function: get tree by phone number with password verification
+  public query func getReferralTreeByPhoneWithPassword(password : Text, phone : Text) : async ?{
+    id : Nat;
+    name : Text;
+    referralCode : Text;
+    phone : Text;
+    referredByName : Text;
+    children : [ReferralNode];
+  } {
+    if (not verifyPassword(password)) {
+      return null;
+    };
+
+    let normalizedPhone = normalizePhone(phone);
+
+    let userOpt = users.values().toArray().find(
+      func(u) {
+        Text.equal(normalizePhone(u.phone), normalizedPhone);
+      }
+    );
+
+    switch (userOpt) {
+      case (?user) {
+        ?buildReferralTree(user.id, 0);
+      };
+      case (null) { null };
+    };
+  };
+
+  // PUBLIC query function - returns all referral trees with network stats (with password verification)
+  public query func getAllReferralTreesWithPassword(password : Text) : async [{
+    userId : Nat;
+    name : Text;
+    phone : Text;
+    referralCode : Text;
+    isPaid : Bool;
+    directReferrals : Nat;
+    totalNetwork : Nat;
+  }] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    let summaryList = List.empty<{
+      userId : Nat;
+      name : Text;
+      phone : Text;
+      referralCode : Text;
+      isPaid : Bool;
+      directReferrals : Nat;
+      totalNetwork : Nat;
+    }>();
+
+    for ((_, user) in users.entries()) {
+      let directReferrals = findReferrals(user.referralCode).size();
+      let totalNetwork = countNetwork(user.referralCode);
+
+      summaryList.add({
+        userId = user.id;
+        name = user.name;
+        phone = user.phone;
+        referralCode = user.referralCode;
+        isPaid = user.isPaid;
+        directReferrals;
+        totalNetwork;
+      });
+    };
+
+    summaryList.toArray();
   };
 
   // PUBLIC query function - no authentication required (for admin panel)
@@ -727,7 +843,7 @@ actor {
   // PUBLIC function - allows first authenticated caller to claim admin
   public shared ({ caller }) func claimFirstAdmin() : async () {
     if (caller.isAnonymous()) {
-      Runtime.trap("Must be authenticated to claim admin");
+      Runtime.trap("Unauthorized: Must be authenticated to claim admin");
     };
     if (adminAssigned) {
       Runtime.trap("An admin has already been assigned");

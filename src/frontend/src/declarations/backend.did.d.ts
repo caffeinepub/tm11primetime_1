@@ -34,6 +34,8 @@ export interface ReferralNode {
   'referralCode' : string,
   'name' : string,
   'children' : Array<ReferralNode>,
+  'phone' : string,
+  'referredByName' : string,
 }
 export interface Transaction {
   'id' : bigint,
@@ -104,6 +106,20 @@ export interface _SERVICE {
     [string],
     Array<PaymentSubmission>
   >,
+  'getAllReferralTreesWithPassword' : ActorMethod<
+    [string],
+    Array<
+      {
+        'totalNetwork' : bigint,
+        'directReferrals' : bigint,
+        'referralCode' : string,
+        'userId' : bigint,
+        'name' : string,
+        'isPaid' : boolean,
+        'phone' : string,
+      }
+    >
+  >,
   'getAllUsers' : ActorMethod<[], Array<User>>,
   'getAllUsersWithPassword' : ActorMethod<[string], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
@@ -121,7 +137,22 @@ export interface _SERVICE {
       'referralCode' : string,
       'name' : string,
       'children' : Array<ReferralNode>,
+      'phone' : string,
+      'referredByName' : string,
     }
+  >,
+  'getReferralTreeByPhoneWithPassword' : ActorMethod<
+    [string, string],
+    [] | [
+      {
+        'id' : bigint,
+        'referralCode' : string,
+        'name' : string,
+        'children' : Array<ReferralNode>,
+        'phone' : string,
+        'referredByName' : string,
+      }
+    ]
   >,
   'getTransactions' : ActorMethod<[], Array<Transaction>>,
   'getUserByPhone' : ActorMethod<[string], [] | [User]>,

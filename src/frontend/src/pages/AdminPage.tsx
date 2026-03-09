@@ -47,17 +47,21 @@ import {
   AlertCircle,
   BarChart3,
   CheckCircle,
+  Crown,
   Link as LinkIcon,
   Loader2,
   Lock,
   LogOut,
+  Network,
   Pencil,
+  Phone,
   PlayCircle,
   Plus,
   Receipt,
   RefreshCw,
   Shield,
   Trash2,
+  UserCheck,
   Users,
   XCircle,
   Zap,
@@ -65,15 +69,17 @@ import {
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { User } from "../backend.d";
+import type { ReferralNode, User } from "../backend.d";
 import {
   useAddVideoMutation,
   useAllPaymentSubmissions,
+  useAllReferralTreesAdmin,
   useAllUsers,
   useAllVideosPublic,
   useDeletePaymentSubmissionMutation,
   useDeleteUserMutation,
   useDeleteVideoMutation,
+  useReferralTreeByPhoneAdmin,
   useUpdateUserMutation,
   useUpdateUserStatusMutation,
   useVerifyPaymentSubmissionMutation,
@@ -99,6 +105,7 @@ interface AddVideoFormData {
   title: string;
   category: string;
   url: string;
+  channelUrl: string;
   description: string;
   duration: string;
 }
@@ -107,6 +114,7 @@ const initialFormData: AddVideoFormData = {
   title: "",
   category: "",
   url: "",
+  channelUrl: "",
   description: "",
   duration: "",
 };
@@ -129,6 +137,447 @@ function formatAdminWatchTime(phone: string): string {
   const m = Math.floor((secs % 3600) / 60);
   if (h > 0) return `${h}h ${m}m`;
   return `${m} min`;
+}
+
+// ── Admin Matrix Node (compact, inline version of DashboardPage's MatrixNode) ─
+
+const adminLevelColors = [
+  {
+    bg: "bg-primary/15 border-primary/35",
+    text: "text-primary",
+    dot: "bg-primary",
+  },
+  {
+    bg: "bg-amber-500/12 border-amber-500/28",
+    text: "text-amber-400",
+    dot: "bg-amber-400",
+  },
+  {
+    bg: "bg-blue-500/12 border-blue-500/28",
+    text: "text-blue-400",
+    dot: "bg-blue-400",
+  },
+  {
+    bg: "bg-emerald-500/12 border-emerald-500/28",
+    text: "text-emerald-400",
+    dot: "bg-emerald-400",
+  },
+  {
+    bg: "bg-purple-500/12 border-purple-500/28",
+    text: "text-purple-400",
+    dot: "bg-purple-400",
+  },
+  {
+    bg: "bg-rose-500/12 border-rose-500/28",
+    text: "text-rose-400",
+    dot: "bg-rose-400",
+  },
+  {
+    bg: "bg-cyan-500/12 border-cyan-500/28",
+    text: "text-cyan-400",
+    dot: "bg-cyan-400",
+  },
+];
+
+function getAdminColor(depth: number) {
+  return adminLevelColors[depth % adminLevelColors.length];
+}
+
+interface AdminMatrixNodeProps {
+  node: ReferralNode | null;
+  depth: number;
+  maxDepth: number;
+  slotIndex: number;
+}
+
+function AdminMatrixNode({
+  node,
+  depth,
+  maxDepth,
+  slotIndex,
+}: AdminMatrixNodeProps) {
+  const color = getAdminColor(depth);
+  const isLeafLevel = depth >= maxDepth;
+
+  const childSlots: Array<ReferralNode | null> = [null, null, null];
+  if (node) {
+    node.children.slice(0, 3).forEach((child, i) => {
+      childSlots[i] = child;
+    });
+  }
+
+  const filledChildCount = node ? Math.min(node.children.length, 3) : 0;
+
+  return (
+    <div className="flex flex-col items-center" style={{ minWidth: "120px" }}>
+      {node ? (
+        <div
+          className={`relative w-28 rounded-xl border px-2.5 py-2 flex flex-col gap-1 shadow-sm transition-all hover:scale-[1.03] ${color.bg}`}
+          data-ocid={`admin.matrix.node.${depth}.${slotIndex}`}
+        >
+          <div className={`flex items-center gap-1.5 ${color.text}`}>
+            <Crown className="w-3 h-3 flex-shrink-0" />
+            <span className="font-ui font-bold text-[10px] truncate max-w-[72px]">
+              {node.name}
+            </span>
+          </div>
+          {node.phone && (
+            <div className="flex items-center gap-1 text-muted-foreground/80">
+              <Phone className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="font-ui text-[9px] truncate max-w-[72px]">
+                {node.phone}
+              </span>
+            </div>
+          )}
+          {node.referredByName && depth > 0 && (
+            <div className="flex items-center gap-1 text-muted-foreground/70">
+              <UserCheck className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="font-ui text-[9px] truncate max-w-[64px]">
+                by: {node.referredByName}
+              </span>
+            </div>
+          )}
+          <code className="font-ui text-[9px] text-muted-foreground bg-black/20 rounded px-1 py-0.5 truncate block">
+            {node.referralCode}
+          </code>
+          {depth === 0 && (
+            <span className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-[9px] font-ui font-bold px-1.5 py-0.5 rounded-full whitespace-nowrap">
+              Root
+            </span>
+          )}
+          {!isLeafLevel && (
+            <div className="flex gap-0.5 mt-0.5">
+              {[0, 1, 2].map((i) => (
+                <div
+                  key={i}
+                  className={`h-1 flex-1 rounded-full ${
+                    i < filledChildCount ? color.dot : "bg-border/50"
+                  }`}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="w-28 rounded-xl border border-dashed border-border/50 px-2.5 py-3 flex flex-col items-center gap-1.5 opacity-50">
+          <div className="w-6 h-6 rounded-full border border-dashed border-muted-foreground/40 flex items-center justify-center">
+            <Plus className="w-3 h-3 text-muted-foreground" />
+          </div>
+          <span className="text-muted-foreground font-ui text-[9px] text-center leading-tight">
+            Empty Slot
+          </span>
+        </div>
+      )}
+
+      {node && !isLeafLevel && (
+        <div className="flex flex-col items-center w-full">
+          <div className="w-px h-4 bg-border/40" />
+          <div className="relative flex items-start justify-center gap-3 w-full">
+            {(["a", "b", "c"] as const).map((slotKey, i) => (
+              <div key={slotKey} className="flex flex-col items-center">
+                <div className="w-px h-4 bg-border/40" />
+                <AdminMatrixNode
+                  node={childSlots[i]}
+                  depth={depth + 1}
+                  maxDepth={maxDepth}
+                  slotIndex={i}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {node && isLeafLevel && node.children.length > 0 && (
+        <div className="mt-2">
+          <span className="text-[9px] font-ui text-muted-foreground bg-secondary/60 px-1.5 py-0.5 rounded-full">
+            +{node.children.length} more
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Matrix Admin Tab ──────────────────────────────────────────────────────────
+
+interface MatrixAdminTabProps {
+  allReferralTrees: Array<{
+    totalNetwork: bigint;
+    directReferrals: bigint;
+    referralCode: string;
+    userId: bigint;
+    name: string;
+    isPaid: boolean;
+    phone: string;
+  }>;
+  allTreesLoading: boolean;
+  refetchAllTrees: () => void;
+  selectedPhone: string | null;
+  setSelectedPhone: (phone: string | null) => void;
+  selectedUserTree: {
+    id: bigint;
+    referralCode: string;
+    name: string;
+    children: Array<ReferralNode>;
+    phone: string;
+    referredByName: string;
+  } | null;
+  selectedTreeLoading: boolean;
+}
+
+function MatrixAdminTab({
+  allReferralTrees,
+  allTreesLoading,
+  refetchAllTrees,
+  selectedPhone,
+  setSelectedPhone,
+  selectedUserTree,
+  selectedTreeLoading,
+}: MatrixAdminTabProps) {
+  return (
+    <div className="space-y-4" data-ocid="admin.matrix.panel">
+      {/* ── Section A: Network Summary Table ── */}
+      <Card className="card-premium">
+        <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
+          <div>
+            <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+              <Network className="w-5 h-5 text-primary" />
+              Network Summary
+            </CardTitle>
+            <p className="text-muted-foreground text-xs font-body mt-1">
+              All users and their matrix tree positions. Click "View Tree" to
+              inspect a user's downline.
+            </p>
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            className="border-border font-ui text-xs flex-shrink-0"
+            onClick={refetchAllTrees}
+            disabled={allTreesLoading}
+            data-ocid="admin.matrix.secondary_button"
+          >
+            {allTreesLoading ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin mr-1" />
+            ) : (
+              <RefreshCw className="w-3.5 h-3.5 mr-1" />
+            )}
+            Refresh
+          </Button>
+        </CardHeader>
+        <CardContent className="p-0">
+          {allTreesLoading ? (
+            <div
+              className="p-5 space-y-3"
+              data-ocid="admin.matrix.loading_state"
+            >
+              {["s1", "s2", "s3", "s4", "s5"].map((k) => (
+                <Skeleton key={k} className="h-12 rounded-lg" />
+              ))}
+            </div>
+          ) : !allReferralTrees || allReferralTrees.length === 0 ? (
+            <div
+              className="p-10 text-center"
+              data-ocid="admin.matrix.empty_state"
+            >
+              <Network className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+              <p className="text-muted-foreground font-body text-sm">
+                No matrix data yet.
+              </p>
+              <p className="text-muted-foreground font-body text-xs mt-1 opacity-70">
+                Click Refresh to load network data.
+              </p>
+            </div>
+          ) : (
+            <ScrollArea className="max-h-[500px]">
+              <Table data-ocid="admin.matrix.table">
+                <TableHeader>
+                  <TableRow className="border-border hover:bg-transparent">
+                    {[
+                      "Name",
+                      "Phone",
+                      "Referral Code",
+                      "Paid",
+                      "Direct Refs",
+                      "Total Network",
+                      "Actions",
+                    ].map((h) => (
+                      <TableHead
+                        key={h}
+                        className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
+                      >
+                        {h}
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {allReferralTrees.map((row, i) => {
+                    const ocidIndex = i + 1;
+                    return (
+                      <TableRow
+                        key={row.userId.toString()}
+                        className={`border-border hover:bg-muted/20 transition-colors ${selectedPhone === row.phone ? "bg-primary/5" : ""}`}
+                        data-ocid={`admin.matrix.item.${ocidIndex}`}
+                      >
+                        <TableCell className="py-3 font-ui font-medium text-sm text-foreground">
+                          {row.name}
+                        </TableCell>
+                        <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                          {row.phone || "—"}
+                        </TableCell>
+                        <TableCell className="py-3">
+                          <code className="font-ui text-xs text-primary bg-primary/10 px-1.5 py-0.5 rounded">
+                            {row.referralCode || "—"}
+                          </code>
+                        </TableCell>
+                        <TableCell className="py-3">
+                          {row.isPaid ? (
+                            <CheckCircle className="w-4 h-4 text-green-400" />
+                          ) : (
+                            <XCircle className="w-4 h-4 text-red-400" />
+                          )}
+                        </TableCell>
+                        <TableCell className="py-3 text-sm font-display font-bold text-foreground">
+                          {Number(row.directReferrals)}
+                        </TableCell>
+                        <TableCell className="py-3 text-sm font-display font-bold text-primary">
+                          {Number(row.totalNetwork)}
+                        </TableCell>
+                        <TableCell className="py-3">
+                          <Button
+                            size="sm"
+                            variant={
+                              selectedPhone === row.phone
+                                ? "default"
+                                : "outline"
+                            }
+                            onClick={() => {
+                              if (selectedPhone === row.phone) {
+                                setSelectedPhone(null);
+                              } else {
+                                setSelectedPhone(row.phone);
+                              }
+                            }}
+                            className={`font-ui text-xs h-7 px-2.5 ${
+                              selectedPhone === row.phone
+                                ? "bg-primary text-primary-foreground"
+                                : "border-primary/40 text-primary hover:bg-primary/10"
+                            }`}
+                            data-ocid={`admin.matrix.view_button.${ocidIndex}`}
+                          >
+                            {selectedPhone === row.phone
+                              ? "Close"
+                              : "View Tree"}
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* ── Section B: Tree Viewer ── */}
+      {selectedPhone && (
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+          data-ocid="admin.matrix.tree.panel"
+        >
+          <Card className="card-premium border-primary/20">
+            <CardHeader className="pb-3 flex flex-row items-start justify-between gap-2">
+              <div>
+                <CardTitle className="font-display font-bold text-lg text-foreground flex items-center gap-2">
+                  <Network className="w-5 h-5 text-primary" />
+                  {selectedUserTree
+                    ? `${selectedUserTree.name}'s Matrix Tree`
+                    : "Loading Tree..."}
+                </CardTitle>
+                <p className="text-muted-foreground text-xs font-body mt-1">
+                  Phone: {selectedPhone} ·{" "}
+                  {selectedUserTree
+                    ? `Referral Code: ${selectedUserTree.referralCode}`
+                    : ""}
+                </p>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setSelectedPhone(null)}
+                className="border-border font-ui text-xs flex-shrink-0"
+                data-ocid="admin.matrix.tree.close_button"
+              >
+                Close
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {selectedTreeLoading ? (
+                <div
+                  className="space-y-3"
+                  data-ocid="admin.matrix.tree.loading_state"
+                >
+                  <div className="flex justify-center gap-3">
+                    {["t1", "t2", "t3"].map((k) => (
+                      <Skeleton
+                        key={k}
+                        className="h-16 w-28 rounded-xl animate-shimmer"
+                      />
+                    ))}
+                  </div>
+                </div>
+              ) : selectedUserTree ? (
+                <ScrollArea className="w-full">
+                  <div
+                    className="overflow-x-auto overflow-y-visible pb-4"
+                    data-ocid="admin.matrix.tree.scroll"
+                  >
+                    <div className="flex justify-center pt-6 min-w-max pb-4 px-4">
+                      <AdminMatrixNode
+                        node={{
+                          id: selectedUserTree.id,
+                          referralCode: selectedUserTree.referralCode,
+                          name: selectedUserTree.name,
+                          children: selectedUserTree.children,
+                          phone: selectedUserTree.phone,
+                          referredByName: selectedUserTree.referredByName,
+                        }}
+                        depth={0}
+                        maxDepth={5}
+                        slotIndex={0}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-center text-muted-foreground/60 font-body text-[10px] mt-2 pb-2">
+                    Tree shows up to 5 levels deep · Each member has 3 referral
+                    slots
+                  </p>
+                </ScrollArea>
+              ) : (
+                <div
+                  className="py-10 text-center"
+                  data-ocid="admin.matrix.tree.empty_state"
+                >
+                  <Network className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+                  <p className="text-muted-foreground font-body text-sm">
+                    No tree data found for this user.
+                  </p>
+                  <p className="text-muted-foreground font-body text-xs mt-1 opacity-70">
+                    User may not have an active membership yet.
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+    </div>
+  );
 }
 
 // ── Admin Login Screen ────────────────────────────────────────────────────────
@@ -351,6 +800,38 @@ export default function AdminPage() {
     localStorage.setItem("admin_channels", JSON.stringify(channels));
   }, [channels]);
 
+  // ── Video channel URL map (localStorage) ──────────────────────────────────
+  // Maps video ID (string) -> channel URL
+  const [videoChannelMap, setVideoChannelMap] = useState<
+    Record<string, string>
+  >(() => {
+    try {
+      const raw = localStorage.getItem("admin_video_channels");
+      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem(
+      "admin_video_channels",
+      JSON.stringify(videoChannelMap),
+    );
+  }, [videoChannelMap]);
+
+  // ── Matrix state ───────────────────────────────────────────────────────────
+  const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
+
+  const {
+    data: allReferralTrees,
+    isLoading: allTreesLoading,
+    refetch: refetchAllTrees,
+  } = useAllReferralTreesAdmin(isAdminLoggedIn);
+
+  const { data: selectedUserTree, isLoading: selectedTreeLoading } =
+    useReferralTreeByPhoneAdmin(selectedPhone);
+
   // ── Auto-Approve state ─────────────────────────────────────────────────────
   const [autoApproveEnabled, setAutoApproveEnabled] = useState<boolean>(() => {
     return localStorage.getItem("admin_auto_approve") === "true";
@@ -504,6 +985,13 @@ export default function AdminPage() {
         description: videoForm.description,
         duration: BigInt(durationNum),
       });
+      // Store channel URL mapping keyed by video URL
+      if (videoForm.channelUrl.trim()) {
+        setVideoChannelMap((prev) => ({
+          ...prev,
+          [videoForm.url.trim()]: videoForm.channelUrl.trim(),
+        }));
+      }
       toast.success("Video added successfully!");
       setVideoForm(initialFormData);
       setAddVideoOpen(false);
@@ -698,6 +1186,14 @@ export default function AdminPage() {
             >
               <LinkIcon className="w-4 h-4" />
               Channels ({channels.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="matrix"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.matrix.tab"
+            >
+              <Network className="w-4 h-4" />
+              Matrix
             </TabsTrigger>
             <TabsTrigger
               value="stats"
@@ -1513,6 +2009,65 @@ export default function AdminPage() {
                         />
                       </div>
                       <div className="space-y-1.5">
+                        <Label
+                          htmlFor="vChannelUrl"
+                          className="font-ui text-sm"
+                        >
+                          Channel URL
+                        </Label>
+                        {channels.length > 0 ? (
+                          <Select
+                            value={videoForm.channelUrl}
+                            onValueChange={(v) =>
+                              setVideoForm((prev) => ({
+                                ...prev,
+                                channelUrl: v === "__manual__" ? "" : v,
+                              }))
+                            }
+                          >
+                            <SelectTrigger
+                              id="vChannelUrl"
+                              className="bg-input border-border font-body"
+                              data-ocid="admin.videos.channel.select"
+                            >
+                              <SelectValue placeholder="Select channel (optional)" />
+                            </SelectTrigger>
+                            <SelectContent className="bg-popover border-border">
+                              <SelectItem
+                                value="__manual__"
+                                className="font-ui text-sm text-muted-foreground italic"
+                              >
+                                — None / Enter manually —
+                              </SelectItem>
+                              {channels.map((ch) => (
+                                <SelectItem
+                                  key={ch.id}
+                                  value={ch.url}
+                                  className="font-ui text-sm"
+                                >
+                                  {ch.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : null}
+                        <Input
+                          id="vChannelUrlManual"
+                          name="channelUrl"
+                          value={videoForm.channelUrl}
+                          onChange={handleVideoFormChange}
+                          placeholder="https://youtube.com/@yourchannel (optional)"
+                          className="bg-input border-border font-body"
+                          data-ocid="admin.videos.channelurl.input"
+                        />
+                        {channels.length > 0 && (
+                          <p className="text-muted-foreground font-body text-xs">
+                            Select from your saved channels above, or type a URL
+                            directly.
+                          </p>
+                        )}
+                      </div>
+                      <div className="space-y-1.5">
                         <Label htmlFor="vDesc" className="font-ui text-sm">
                           Description
                         </Label>
@@ -1592,16 +2147,20 @@ export default function AdminPage() {
                     <Table data-ocid="admin.videos.table">
                       <TableHeader>
                         <TableRow className="border-border hover:bg-transparent">
-                          {["Title", "Category", "Duration", "Actions"].map(
-                            (h) => (
-                              <TableHead
-                                key={h}
-                                className="text-muted-foreground font-ui text-xs uppercase tracking-wide"
-                              >
-                                {h}
-                              </TableHead>
-                            ),
-                          )}
+                          {[
+                            "Title",
+                            "Category",
+                            "Channel URL",
+                            "Duration",
+                            "Actions",
+                          ].map((h) => (
+                            <TableHead
+                              key={h}
+                              className="text-muted-foreground font-ui text-xs uppercase tracking-wide whitespace-nowrap"
+                            >
+                              {h}
+                            </TableHead>
+                          ))}
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1609,13 +2168,15 @@ export default function AdminPage() {
                           const ocidIndex = i + 1;
                           const durationSec = Number(video.duration);
                           const mins = Math.floor(durationSec / 60);
+                          const assignedChannelUrl =
+                            videoChannelMap[video.url] ?? "";
                           return (
                             <TableRow
                               key={video.id.toString()}
                               className="border-border hover:bg-muted/20 transition-colors"
                               data-ocid={`admin.videos.item.${ocidIndex}`}
                             >
-                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground max-w-[200px]">
+                              <TableCell className="py-3 font-ui font-medium text-sm text-foreground max-w-[160px]">
                                 <span className="truncate block">
                                   {video.title}
                                 </span>
@@ -1628,7 +2189,70 @@ export default function AdminPage() {
                                   {video.category}
                                 </Badge>
                               </TableCell>
-                              <TableCell className="py-3 text-sm text-muted-foreground font-body">
+                              <TableCell className="py-3 max-w-[180px]">
+                                {assignedChannelUrl ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <a
+                                      href={assignedChannelUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="font-body text-xs text-primary hover:underline truncate block max-w-[130px]"
+                                    >
+                                      {assignedChannelUrl}
+                                    </a>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={() => {
+                                        const newUrl = prompt(
+                                          "Edit Channel URL:",
+                                          assignedChannelUrl,
+                                        );
+                                        if (newUrl !== null) {
+                                          if (newUrl.trim()) {
+                                            setVideoChannelMap((prev) => ({
+                                              ...prev,
+                                              [video.url]: newUrl.trim(),
+                                            }));
+                                          } else {
+                                            setVideoChannelMap((prev) => {
+                                              const next = { ...prev };
+                                              delete next[video.url];
+                                              return next;
+                                            });
+                                          }
+                                        }
+                                      }}
+                                      className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-6 h-6 flex-shrink-0"
+                                      data-ocid={`admin.videos.channel_edit_button.${ocidIndex}`}
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => {
+                                      const newUrl = prompt(
+                                        "Enter Channel URL for this video:",
+                                      );
+                                      if (newUrl?.trim()) {
+                                        setVideoChannelMap((prev) => ({
+                                          ...prev,
+                                          [video.url]: newUrl.trim(),
+                                        }));
+                                      }
+                                    }}
+                                    className="text-muted-foreground hover:text-primary text-xs h-7 px-2"
+                                    data-ocid={`admin.videos.channel_add_button.${ocidIndex}`}
+                                  >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Add URL
+                                  </Button>
+                                )}
+                              </TableCell>
+                              <TableCell className="py-3 text-sm text-muted-foreground font-body whitespace-nowrap">
                                 {mins}m {durationSec % 60}s
                               </TableCell>
                               <TableCell className="py-3">
@@ -1970,6 +2594,19 @@ export default function AdminPage() {
                 </AlertDialogFooter>
               </AlertDialogContent>
             </AlertDialog>
+          </TabsContent>
+
+          {/* ── MATRIX TAB ── */}
+          <TabsContent value="matrix">
+            <MatrixAdminTab
+              allReferralTrees={allReferralTrees ?? []}
+              allTreesLoading={allTreesLoading}
+              refetchAllTrees={() => void refetchAllTrees()}
+              selectedPhone={selectedPhone}
+              setSelectedPhone={setSelectedPhone}
+              selectedUserTree={selectedUserTree ?? null}
+              selectedTreeLoading={selectedTreeLoading}
+            />
           </TabsContent>
 
           {/* ── STATS TAB ── */}

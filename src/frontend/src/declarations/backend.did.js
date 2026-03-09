@@ -70,6 +70,8 @@ ReferralNode.fill(
     'referralCode' : IDL.Text,
     'name' : IDL.Text,
     'children' : IDL.Vec(ReferralNode),
+    'phone' : IDL.Text,
+    'referredByName' : IDL.Text,
   })
 );
 export const Transaction = IDL.Record({
@@ -117,6 +119,23 @@ export const idlService = IDL.Service({
       [IDL.Vec(PaymentSubmission)],
       ['query'],
     ),
+  'getAllReferralTreesWithPassword' : IDL.Func(
+      [IDL.Text],
+      [
+        IDL.Vec(
+          IDL.Record({
+            'totalNetwork' : IDL.Nat,
+            'directReferrals' : IDL.Nat,
+            'referralCode' : IDL.Text,
+            'userId' : IDL.Nat,
+            'name' : IDL.Text,
+            'isPaid' : IDL.Bool,
+            'phone' : IDL.Text,
+          })
+        ),
+      ],
+      ['query'],
+    ),
   'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
   'getAllUsersWithPassword' : IDL.Func([IDL.Text], [IDL.Vec(User)], ['query']),
   'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
@@ -139,7 +158,25 @@ export const idlService = IDL.Service({
           'referralCode' : IDL.Text,
           'name' : IDL.Text,
           'children' : IDL.Vec(ReferralNode),
+          'phone' : IDL.Text,
+          'referredByName' : IDL.Text,
         }),
+      ],
+      ['query'],
+    ),
+  'getReferralTreeByPhoneWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Text],
+      [
+        IDL.Opt(
+          IDL.Record({
+            'id' : IDL.Nat,
+            'referralCode' : IDL.Text,
+            'name' : IDL.Text,
+            'children' : IDL.Vec(ReferralNode),
+            'phone' : IDL.Text,
+            'referredByName' : IDL.Text,
+          })
+        ),
       ],
       ['query'],
     ),
@@ -250,6 +287,8 @@ export const idlFactory = ({ IDL }) => {
       'referralCode' : IDL.Text,
       'name' : IDL.Text,
       'children' : IDL.Vec(ReferralNode),
+      'phone' : IDL.Text,
+      'referredByName' : IDL.Text,
     })
   );
   const Transaction = IDL.Record({
@@ -301,6 +340,23 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(PaymentSubmission)],
         ['query'],
       ),
+    'getAllReferralTreesWithPassword' : IDL.Func(
+        [IDL.Text],
+        [
+          IDL.Vec(
+            IDL.Record({
+              'totalNetwork' : IDL.Nat,
+              'directReferrals' : IDL.Nat,
+              'referralCode' : IDL.Text,
+              'userId' : IDL.Nat,
+              'name' : IDL.Text,
+              'isPaid' : IDL.Bool,
+              'phone' : IDL.Text,
+            })
+          ),
+        ],
+        ['query'],
+      ),
     'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
     'getAllUsersWithPassword' : IDL.Func(
         [IDL.Text],
@@ -327,7 +383,25 @@ export const idlFactory = ({ IDL }) => {
             'referralCode' : IDL.Text,
             'name' : IDL.Text,
             'children' : IDL.Vec(ReferralNode),
+            'phone' : IDL.Text,
+            'referredByName' : IDL.Text,
           }),
+        ],
+        ['query'],
+      ),
+    'getReferralTreeByPhoneWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Text],
+        [
+          IDL.Opt(
+            IDL.Record({
+              'id' : IDL.Nat,
+              'referralCode' : IDL.Text,
+              'name' : IDL.Text,
+              'children' : IDL.Vec(ReferralNode),
+              'phone' : IDL.Text,
+              'referredByName' : IDL.Text,
+            })
+          ),
         ],
         ['query'],
       ),

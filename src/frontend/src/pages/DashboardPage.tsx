@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
@@ -19,8 +20,10 @@ import {
   Phone,
   Play,
   Plus,
+  RefreshCw,
   Timer,
   TrendingUp,
+  UserCheck,
   Users,
   Wallet,
   XCircle,
@@ -138,6 +141,22 @@ function MatrixNode({ node, depth, maxDepth, slotIndex }: MatrixNodeProps) {
               {node.name}
             </span>
           </div>
+          {node.phone && (
+            <div className="flex items-center gap-1 text-muted-foreground/80">
+              <Phone className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="font-ui text-[9px] truncate max-w-[72px]">
+                {node.phone}
+              </span>
+            </div>
+          )}
+          {node.referredByName && depth > 0 && (
+            <div className="flex items-center gap-1 text-muted-foreground/70">
+              <UserCheck className="w-2.5 h-2.5 flex-shrink-0" />
+              <span className="font-ui text-[9px] truncate max-w-[64px]">
+                by: {node.referredByName}
+              </span>
+            </div>
+          )}
           <code className="font-ui text-[9px] text-muted-foreground bg-black/20 rounded px-1 py-0.5 truncate block">
             {node.referralCode}
           </code>
@@ -420,6 +439,8 @@ function formatWatchTime(seconds: number): string {
 export default function DashboardPage() {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const queryClient = useQueryClient();
 
   const phoneAuth = usePhoneAuth();
 
@@ -473,6 +494,31 @@ export default function DashboardPage() {
     const message = `Join Tm11primeTime! Use my referral code *${referralCode}* to register: ${referralLink}`;
     const encodedMessage = encodeURIComponent(message);
     window.open(`https://wa.me/?text=${encodedMessage}`, "_blank");
+  };
+
+  const handleTreeRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["referralTreeByCode", userProfile?.referralCode ?? null],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: [
+            "userByPhone",
+            phoneAuth.phone
+              ? phoneAuth.phone
+                  .replace(/\D/g, "")
+                  .replace(/^91/, "")
+                  .replace(/^0/, "")
+              : null,
+          ],
+        }),
+      ]);
+      toast.success("Tree refreshed!");
+    } finally {
+      setIsRefreshing(false);
+    }
   };
 
   if (isLoading) {
@@ -896,10 +942,23 @@ export default function DashboardPage() {
                 >
                   3 slots/member
                 </Badge>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleTreeRefresh}
+                  disabled={isRefreshing || treeLoading}
+                  className="border-border font-ui text-xs h-7 px-2.5"
+                  data-ocid="dashboard.tree.secondary_button"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 mr-1 ${isRefreshing ? "animate-spin" : ""}`}
+                  />
+                  Refresh
+                </Button>
               </div>
             </div>
             <p className="text-muted-foreground text-xs font-body mt-0.5">
-              Your complete downline network — filled slots shown automatically
+              Your complete downline network — auto-updates every 20 seconds
             </p>
           </CardHeader>
           <CardContent>

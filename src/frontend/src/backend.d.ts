@@ -21,6 +21,8 @@ export interface ReferralNode {
     referralCode: string;
     name: string;
     children: Array<ReferralNode>;
+    phone: string;
+    referredByName: string;
 }
 export interface PaymentSubmissionInput {
     utr: string;
@@ -95,6 +97,15 @@ export interface backendInterface {
     forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllPaymentSubmissionsWithPassword(password: string): Promise<Array<PaymentSubmission>>;
+    getAllReferralTreesWithPassword(password: string): Promise<Array<{
+        totalNetwork: bigint;
+        directReferrals: bigint;
+        referralCode: string;
+        userId: bigint;
+        name: string;
+        isPaid: boolean;
+        phone: string;
+    }>>;
     getAllUsers(): Promise<Array<User>>;
     getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
@@ -110,7 +121,17 @@ export interface backendInterface {
         referralCode: string;
         name: string;
         children: Array<ReferralNode>;
+        phone: string;
+        referredByName: string;
     }>;
+    getReferralTreeByPhoneWithPassword(password: string, phone: string): Promise<{
+        id: bigint;
+        referralCode: string;
+        name: string;
+        children: Array<ReferralNode>;
+        phone: string;
+        referredByName: string;
+    } | null>;
     getTransactions(): Promise<Array<Transaction>>;
     getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
