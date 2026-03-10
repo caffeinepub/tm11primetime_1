@@ -196,6 +196,7 @@ export interface backendInterface {
     getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
     getAllVideosPublic(): Promise<Array<Video>>;
+    getVideosByCategoryPublic(category: string): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
@@ -509,6 +510,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getAllVideosPublic();
+            return result;
+        }
+    }
+    async getVideosByCategoryPublic(arg0: string): Promise<Array<Video>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getVideosByCategoryPublic(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getVideosByCategoryPublic(arg0);
             return result;
         }
     }

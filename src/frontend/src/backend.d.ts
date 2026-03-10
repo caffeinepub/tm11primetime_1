@@ -113,6 +113,7 @@ export interface backendInterface {
     getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
     getAllVideosPublic(): Promise<Array<Video>>;
+    getVideosByCategoryPublic(category: string): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;

@@ -143,6 +143,7 @@ export const idlService = IDL.Service({
   'getAllUsersWithPassword' : IDL.Func([IDL.Text], [IDL.Vec(User)], ['query']),
   'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
   'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
+  'getVideosByCategoryPublic' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getMyPaymentSubmissions' : IDL.Func(
@@ -371,6 +372,7 @@ export const idlFactory = ({ IDL }) => {
       ),
     'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
     'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
+  'getVideosByCategoryPublic' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getMyPaymentSubmissions' : IDL.Func(

@@ -185,77 +185,6 @@ function VideoCard({ video, watchRecord, index, onClick }: VideoCardProps) {
 }
 
 // Sample/demo videos for empty state
-const SAMPLE_VIDEOS: Video[] = [
-  {
-    id: BigInt(1),
-    title: "How to Build a Referral Network in 30 Days",
-    category: "Tutorial",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description:
-      "Step-by-step guide to building a powerful referral network from scratch.",
-    duration: BigInt(1800),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-  {
-    id: BigInt(2),
-    title: "Understanding MLM Income Streams",
-    category: "Educational",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description:
-      "Deep dive into multi-level marketing and how to maximize your earnings.",
-    duration: BigInt(2700),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-  {
-    id: BigInt(3),
-    title: "Bollywood Blockbusters 2024 Highlights",
-    category: "Entertainment",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description: "Catch up on the biggest Bollywood releases of the year.",
-    duration: BigInt(3600),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-  {
-    id: BigInt(4),
-    title: "Morning Yoga for Energy & Focus",
-    category: "Wellness",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description: "Start your day with a powerful 30-minute yoga routine.",
-    duration: BigInt(1800),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-  {
-    id: BigInt(5),
-    title: "Bhagavad Gita: Teachings for Modern Life",
-    category: "Devotional",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description: "Ancient wisdom adapted for contemporary challenges.",
-    duration: BigInt(2400),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-  {
-    id: BigInt(6),
-    title: "India's Tech Revolution: 2024 Report",
-    category: "Media",
-    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
-    description:
-      "In-depth look at India's booming tech sector and opportunities.",
-    duration: BigInt(1500),
-    createdAt: BigInt(Date.now() * 1000000),
-    channelUrl: "",
-    thumbnailUrl: "",
-  },
-];
 
 export default function VideosPage() {
   const navigate = useNavigate();
@@ -273,7 +202,7 @@ export default function VideosPage() {
   );
 
   // Use real data or sample data if empty
-  const displayVideos = (videos && videos.length > 0 ? videos : SAMPLE_VIDEOS)
+  const displayVideos = (videos ?? [])
     .filter((v) => activeCategory === "All" || v.category === activeCategory)
     .filter(
       (v) =>

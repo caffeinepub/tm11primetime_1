@@ -176,8 +176,8 @@ export function useVideosByCategory(category: string) {
     queryKey: ["videosByCategory", category],
     queryFn: async () => {
       if (!actor) return [];
-      if (category === "All") return actor.getAllVideos();
-      return actor.getVideosByCategory(category);
+      if (category === "All") return actor.getAllVideosPublic();
+      return actor.getVideosByCategoryPublic(category);
     },
     enabled: !!actor && !isFetching,
   });

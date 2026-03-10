@@ -364,6 +364,11 @@ actor {
     videos.values().toArray().map(toVideoFull);
   };
 
+  // PUBLIC: get videos by category, no auth required
+  public query func getVideosByCategoryPublic(category : Text) : async [VideoFull] {
+    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) }).map(toVideoFull);
+  };
+
   // FULLY PUBLIC query function - NO authentication/permission check
   // Safe for anonymous callers to look up by their own phone number
   public query func getUserByPhone(phone : Text) : async ?User {

@@ -127,6 +127,7 @@ export interface _SERVICE {
   'getAllUsersWithPassword' : ActorMethod<[string], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
   'getAllVideosPublic' : ActorMethod<[], Array<Video>>,
+  'getVideosByCategoryPublic' : ActorMethod<[string], Array<Video>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getMyPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
