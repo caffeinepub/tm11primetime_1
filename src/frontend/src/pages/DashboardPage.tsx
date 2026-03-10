@@ -2,27 +2,38 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import {
   AlertCircle,
+  BookOpen,
   Calendar,
   Check,
+  CheckCircle,
   CheckCircle2,
   ChevronRight,
   Clock,
   Copy,
   Crown,
+  ExternalLink,
+  GraduationCap,
+  Heart,
   Lock,
   MessageCircle,
+  Newspaper,
   Phone,
   Play,
   Plus,
   RefreshCw,
+  Search,
+  Sparkles,
   Timer,
   TrendingUp,
+  Tv,
   UserCheck,
   Users,
   Wallet,
@@ -31,15 +42,355 @@ import {
 import { motion } from "motion/react";
 import { useState } from "react";
 import { toast } from "sonner";
-import type { ReferralNode } from "../backend.d";
+import type { ReferralNode, Video, WatchRecord } from "../backend.d";
 import { PaymentStatus } from "../backend.d";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
   useMyPaymentSubmissions,
   useReferralTreeByCode,
   useUserByPhone,
+  useVideosByCategory,
   useWatchHistory,
 } from "../hooks/useQueries";
+
+// ─── Video Categories & Colors ───────────────────────────────────────────────
+
+const VIDEO_CATEGORIES = [
+  { value: "All", label: "All", icon: Play },
+  { value: "Tutorial", label: "Tutorial", icon: BookOpen },
+  { value: "Educational", label: "Educational", icon: GraduationCap },
+  { value: "Entertainment", label: "Entertainment", icon: Tv },
+  { value: "Wellness", label: "Wellness", icon: Heart },
+  { value: "Devotional", label: "Devotional", icon: Sparkles },
+  { value: "Media", label: "Media", icon: Newspaper },
+];
+
+const CATEGORY_COLORS: Record<string, string> = {
+  Tutorial: "bg-blue-500/20 text-blue-300 border-blue-500/30",
+  Educational: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+  Entertainment: "bg-pink-500/20 text-pink-300 border-pink-500/30",
+  Wellness: "bg-green-500/20 text-green-300 border-green-500/30",
+  Devotional: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+  Media: "bg-cyan-500/20 text-cyan-300 border-cyan-500/30",
+};
+
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  Tutorial: "from-blue-900 to-blue-700",
+  Educational: "from-purple-900 to-purple-700",
+  Entertainment: "from-pink-900 to-rose-700",
+  Wellness: "from-green-900 to-emerald-700",
+  Devotional: "from-amber-900 to-yellow-700",
+  Media: "from-cyan-900 to-teal-700",
+  default: "from-slate-900 to-slate-700",
+};
+
+const SAMPLE_VIDEOS: Video[] = [
+  {
+    id: BigInt(1),
+    title: "How to Build a Referral Network in 30 Days",
+    category: "Tutorial",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description:
+      "Step-by-step guide to building a powerful referral network from scratch.",
+    duration: BigInt(1800),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+  {
+    id: BigInt(2),
+    title: "Understanding MLM Income Streams",
+    category: "Educational",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description:
+      "Deep dive into multi-level marketing and how to maximize your earnings.",
+    duration: BigInt(2700),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+  {
+    id: BigInt(3),
+    title: "Bollywood Blockbusters 2024 Highlights",
+    category: "Entertainment",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description: "Catch up on the biggest Bollywood releases of the year.",
+    duration: BigInt(3600),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+  {
+    id: BigInt(4),
+    title: "Morning Yoga for Energy & Focus",
+    category: "Wellness",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description: "Start your day with a powerful 30-minute yoga routine.",
+    duration: BigInt(1800),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+  {
+    id: BigInt(5),
+    title: "Bhagavad Gita: Teachings for Modern Life",
+    category: "Devotional",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description: "Ancient wisdom adapted for contemporary challenges.",
+    duration: BigInt(2400),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+  {
+    id: BigInt(6),
+    title: "India's Tech Revolution: 2024 Report",
+    category: "Media",
+    url: "https://www.youtube.com/embed/dQw4w9WgXcQ",
+    description:
+      "In-depth look at India's booming tech sector and opportunities.",
+    duration: BigInt(1500),
+    createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
+  },
+];
+
+function formatVideoDuration(seconds: bigint): string {
+  const s = Number(seconds);
+  const m = Math.floor(s / 60);
+  const remaining = s % 60;
+  if (m >= 60) {
+    const h = Math.floor(m / 60);
+    const mins = m % 60;
+    return `${h}h ${mins}m`;
+  }
+  return `${m}:${remaining.toString().padStart(2, "0")}`;
+}
+
+interface DashboardVideoCardProps {
+  video: Video;
+  watchRecord?: WatchRecord;
+  index: number;
+  onWatch: () => void;
+}
+
+function DashboardVideoCard({
+  video,
+  watchRecord,
+  index,
+  onWatch,
+}: DashboardVideoCardProps) {
+  const gradient =
+    CATEGORY_GRADIENTS[video.category] ?? CATEGORY_GRADIENTS.default;
+  const categoryColor =
+    CATEGORY_COLORS[video.category] ?? "bg-muted text-muted-foreground";
+  const isCompleted = watchRecord?.completed ?? false;
+  const ocidIndex = index + 1;
+
+  const channelUrl = video.channelUrl || null;
+  const thumbnailUrl = (() => {
+    try {
+      const map = JSON.parse(
+        localStorage.getItem("thumbnailMap") ?? "{}",
+      ) as Record<string, string>;
+      return map[video.url] ?? null;
+    } catch {
+      return null;
+    }
+  })();
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3, delay: index * 0.04 }}
+      whileHover={{ y: -2 }}
+    >
+      <Card
+        className="card-premium overflow-hidden hover:border-primary/40 transition-all duration-300"
+        data-ocid={`dashboard.videos.item.${ocidIndex}`}
+      >
+        {/* Thumbnail / Gradient */}
+        <div
+          className={`h-36 bg-gradient-to-br ${gradient} relative flex items-center justify-center`}
+        >
+          {thumbnailUrl && (
+            <img
+              src={thumbnailUrl}
+              alt={video.title}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+          <div className="relative w-12 h-12 rounded-full bg-white/20 backdrop-blur flex items-center justify-center">
+            <Play className="w-5 h-5 text-white ml-0.5" />
+          </div>
+          {/* Duration */}
+          <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur rounded px-2 py-0.5 flex items-center gap-1">
+            <Clock className="w-3 h-3 text-white/80" />
+            <span className="text-white text-xs font-ui">
+              {formatVideoDuration(video.duration)}
+            </span>
+          </div>
+          {isCompleted && (
+            <div className="absolute top-2 right-2 bg-green-500/90 backdrop-blur rounded-full p-1">
+              <CheckCircle className="w-3.5 h-3.5 text-white" />
+            </div>
+          )}
+        </div>
+
+        <CardContent className="p-3 space-y-2">
+          <h3 className="font-display font-semibold text-foreground text-sm leading-snug line-clamp-2">
+            {video.title}
+          </h3>
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="outline" className={`text-xs ${categoryColor}`}>
+              {video.category}
+            </Badge>
+            {isCompleted && (
+              <span className="text-xs text-green-400 font-ui font-medium">
+                ✓ Done
+              </span>
+            )}
+          </div>
+          <div className="flex gap-1.5 pt-0.5">
+            <Button
+              size="sm"
+              className="flex-1 h-7 text-xs bg-primary text-primary-foreground font-ui"
+              onClick={onWatch}
+              data-ocid={`dashboard.videos.watch_button.${ocidIndex}`}
+            >
+              <Play className="w-3 h-3 mr-1" />
+              Watch
+            </Button>
+            {channelUrl && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground px-2"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  window.open(channelUrl, "_blank");
+                }}
+                data-ocid={`dashboard.videos.channel.button.${ocidIndex}`}
+              >
+                <ExternalLink className="w-3 h-3" />
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    </motion.div>
+  );
+}
+
+// ─── Dashboard Videos Section ─────────────────────────────────────────────────
+
+interface DashboardVideosSectionProps {
+  userId: bigint | null;
+}
+
+function DashboardVideosSection({ userId }: DashboardVideosSectionProps) {
+  const navigate = useNavigate();
+  const [activeCategory, setActiveCategory] = useState("All");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const { data: videos, isLoading } = useVideosByCategory(activeCategory);
+  const { data: watchHistory } = useWatchHistory(userId);
+
+  const watchMap = new Map<string, WatchRecord>(
+    (watchHistory ?? []).map((r) => [r.videoId.toString(), r]),
+  );
+
+  const rawVideos = videos && videos.length > 0 ? videos : SAMPLE_VIDEOS;
+  const displayVideos = rawVideos
+    .filter((v) => activeCategory === "All" || v.category === activeCategory)
+    .filter(
+      (v) =>
+        !searchQuery ||
+        v.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        v.description.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+
+  return (
+    <div className="space-y-4">
+      {/* Search */}
+      <div className="relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+        <Input
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search videos..."
+          className="pl-9 bg-input border-border font-body"
+          data-ocid="dashboard.videos.search_input"
+        />
+      </div>
+
+      {/* Category Tabs */}
+      <div className="overflow-x-auto pb-1">
+        <Tabs value={activeCategory} onValueChange={setActiveCategory}>
+          <TabsList className="bg-card border border-border h-auto p-1 flex-wrap gap-1 w-max min-w-full">
+            {VIDEO_CATEGORIES.map((cat) => (
+              <TabsTrigger
+                key={cat.value}
+                value={cat.value}
+                className="flex items-center gap-1.5 text-xs font-ui px-3 py-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+                data-ocid={`dashboard.videos.${cat.value.toLowerCase()}.tab`}
+              >
+                <cat.icon className="w-3.5 h-3.5" />
+                {cat.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {/* Video Grid */}
+      {isLoading ? (
+        <div
+          className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3"
+          data-ocid="dashboard.videos.loading_state"
+        >
+          {["s1", "s2", "s3", "s4", "s5", "s6"].map((k) => (
+            <Skeleton key={k} className="h-52 rounded-xl animate-shimmer" />
+          ))}
+        </div>
+      ) : displayVideos.length === 0 ? (
+        <div
+          className="py-16 text-center"
+          data-ocid="dashboard.videos.empty_state"
+        >
+          <Play className="w-10 h-10 text-muted-foreground mx-auto mb-3 opacity-30" />
+          <h3 className="font-display font-bold text-foreground text-sm mb-1">
+            No videos found
+          </h3>
+          <p className="text-muted-foreground font-body text-xs">
+            {searchQuery
+              ? "Try a different search term."
+              : "No videos in this category yet."}
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {displayVideos.map((video, i) => (
+            <DashboardVideoCard
+              key={video.id.toString()}
+              video={video}
+              watchRecord={watchMap.get(video.id.toString())}
+              index={i}
+              onWatch={() =>
+                navigate({
+                  to: "/videos/$id",
+                  params: { id: video.id.toString() },
+                })
+              }
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ─── Level Earning Rates ──────────────────────────────────────────────────────
 
@@ -590,455 +941,497 @@ export default function DashboardPage() {
         </p>
       </motion.div>
 
-      {/* ── 2. User Summary Card (NEW) ──────────────────────────────────────── */}
-      {userProfile && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.05 }}
-        >
-          <UserSummaryCard
-            name={userProfile.name}
-            phone={userProfile.phone}
-            referralCode={userProfile.isPaid ? userProfile.referralCode : null}
-            isPaid={userProfile.isPaid}
-            walletBalance={userProfile.walletBalance}
-            joinedAt={userProfile.joinedAt}
-          />
-        </motion.div>
-      )}
-
-      {/* ── 3. Payment Status ────────────────────────────────────────────────── */}
-      {latestSubmission && (
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.08 }}
-          data-ocid="dashboard.payment_status.card"
-        >
-          <Card
-            className={`card-premium border-l-4 ${
-              latestSubmission.status === PaymentStatus.approved
-                ? "border-l-green-500"
-                : latestSubmission.status === PaymentStatus.rejected
-                  ? "border-l-red-500"
-                  : "border-l-amber-500"
-            }`}
+      {/* ── Dashboard Tabs ──────────────────────────────────────────────────── */}
+      <Tabs defaultValue="overview">
+        <TabsList className="bg-card border border-border h-auto p-1 gap-1 w-full sm:w-auto">
+          <TabsTrigger
+            value="overview"
+            className="flex-1 sm:flex-none font-ui text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            data-ocid="dashboard.overview.tab"
           >
-            <CardContent className="p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div
-                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                      latestSubmission.status === PaymentStatus.approved
-                        ? "bg-green-500/15"
-                        : latestSubmission.status === PaymentStatus.rejected
-                          ? "bg-red-500/15"
-                          : "bg-amber-500/15"
-                    }`}
-                  >
-                    {latestSubmission.status === PaymentStatus.approved ? (
-                      <CheckCircle2 className="w-5 h-5 text-green-400" />
-                    ) : latestSubmission.status === PaymentStatus.rejected ? (
-                      <XCircle className="w-5 h-5 text-red-400" />
-                    ) : (
-                      <Clock className="w-5 h-5 text-amber-400" />
-                    )}
-                  </div>
-                  <div>
-                    <div className="font-ui font-semibold text-sm text-foreground">
-                      Payment Status
-                    </div>
-                    <div className="text-xs text-muted-foreground font-body mt-0.5">
-                      UTR: {latestSubmission.utr} · ₹{latestSubmission.amount}
-                    </div>
-                    <div className="text-xs text-muted-foreground/60 font-body mt-0.5">
-                      Submitted:{" "}
-                      {new Date(
-                        Number(latestSubmission.timestamp) / 1_000_000,
-                      ).toLocaleDateString("en-IN", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
-                    </div>
-                  </div>
-                </div>
-                <Badge
-                  className={`shrink-0 font-ui text-xs ${
-                    latestSubmission.status === PaymentStatus.approved
-                      ? "bg-green-500/20 text-green-400 border-green-500/30"
-                      : latestSubmission.status === PaymentStatus.rejected
-                        ? "bg-red-500/20 text-red-400 border-red-500/30"
-                        : "bg-amber-500/20 text-amber-400 border-amber-500/30"
-                  }`}
-                  variant="outline"
-                  data-ocid="dashboard.payment_status.badge"
-                >
-                  {latestSubmission.status === PaymentStatus.approved
-                    ? "Approved"
+            Overview
+          </TabsTrigger>
+          <TabsTrigger
+            value="videos"
+            className="flex-1 sm:flex-none font-ui text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            data-ocid="dashboard.videos.tab"
+          >
+            <Play className="w-3.5 h-3.5 mr-1.5" />
+            Videos
+          </TabsTrigger>
+        </TabsList>
+
+        {/* ── Videos Tab Content ────────────────────────────────────────── */}
+        <TabsContent
+          value="videos"
+          data-ocid="dashboard.videos.panel"
+          className="mt-4"
+        >
+          <DashboardVideosSection userId={userProfile?.id ?? null} />
+        </TabsContent>
+
+        {/* ── Overview Tab Content ─────────────────────────────────────── */}
+        <TabsContent value="overview" className="mt-4 space-y-6">
+          {/* ── 2. User Summary Card (NEW) ──────────────────────────────────────── */}
+          {userProfile && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.05 }}
+            >
+              <UserSummaryCard
+                name={userProfile.name}
+                phone={userProfile.phone}
+                referralCode={
+                  userProfile.isPaid ? userProfile.referralCode : null
+                }
+                isPaid={userProfile.isPaid}
+                walletBalance={userProfile.walletBalance}
+                joinedAt={userProfile.joinedAt}
+              />
+            </motion.div>
+          )}
+
+          {/* ── 3. Payment Status ────────────────────────────────────────────────── */}
+          {latestSubmission && (
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.08 }}
+              data-ocid="dashboard.payment_status.card"
+            >
+              <Card
+                className={`card-premium border-l-4 ${
+                  latestSubmission.status === PaymentStatus.approved
+                    ? "border-l-green-500"
                     : latestSubmission.status === PaymentStatus.rejected
-                      ? "Rejected"
-                      : "Pending Review"}
-                </Badge>
-              </div>
-              {latestSubmission.status === PaymentStatus.rejected && (
-                <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
-                  <p className="text-xs text-red-400 font-body">
-                    Your payment was rejected. Please contact admin or resubmit
-                    with the correct details.
-                  </p>
-                </div>
-              )}
-              {latestSubmission.status === PaymentStatus.pending && (
-                <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                  <p className="text-xs text-amber-400/80 font-body">
-                    Your payment is being reviewed. You'll get access once admin
-                    approves it.
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
-      )}
-
-      {/* ── 4. Stats Cards ───────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* Wallet */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.1 }}
-        >
-          <Card
-            className="card-premium hover:border-primary/40 transition-colors cursor-pointer"
-            onClick={() => navigate({ to: "/wallet" })}
-            data-ocid="dashboard.wallet.card"
-          >
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
-                  <Wallet className="w-5 h-5 text-primary" />
-                </div>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-primary/30 text-primary"
-                >
-                  Wallet
-                </Badge>
-              </div>
-              <div className="font-display font-black text-3xl text-gradient-gold">
-                ₹{walletRs.toFixed(2)}
-              </div>
-              <p className="text-muted-foreground text-xs font-body mt-1">
-                Available balance
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Direct Referrals */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.15 }}
-        >
-          <Card className="card-premium">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center">
-                  <Users className="w-5 h-5 text-accent-foreground" />
-                </div>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-accent/30 text-accent-foreground"
-                >
-                  Level 1
-                </Badge>
-              </div>
-              <div className="font-display font-black text-3xl text-foreground">
-                {referralCount}
-                <span className="text-muted-foreground text-lg font-ui font-normal ml-1">
-                  / 3
-                </span>
-              </div>
-              <p className="text-muted-foreground text-xs font-body mt-1">
-                Direct referrals
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Total Network */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.2 }}
-        >
-          <Card className="card-premium">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center">
-                  <TrendingUp className="w-5 h-5 text-green-400" />
-                </div>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-green-500/30 text-green-400"
-                >
-                  Network
-                </Badge>
-              </div>
-              <div className="font-display font-black text-3xl text-foreground">
-                {networkCount}
-              </div>
-              <p className="text-muted-foreground text-xs font-body mt-1">
-                Total network size
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        {/* Total Watch Time */}
-        <motion.div
-          initial={{ opacity: 0, y: 16 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.3, delay: 0.225 }}
-        >
-          <Card className="card-premium" data-ocid="dashboard.watchtime.card">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center">
-                  <Timer className="w-5 h-5 text-blue-400" />
-                </div>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-blue-500/30 text-blue-400"
-                >
-                  Watch Time
-                </Badge>
-              </div>
-              <div className="font-display font-black text-3xl text-foreground">
-                {formatWatchTime(totalWatchSeconds)}
-              </div>
-              <p className="text-muted-foreground text-xs font-body mt-1">
-                Total watched
-              </p>
-            </CardContent>
-          </Card>
-        </motion.div>
-      </div>
-
-      {/* ── 5. Referral Link Card ─────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.25 }}
-      >
-        <Card className="card-premium border-primary/20">
-          <CardHeader className="pb-3">
-            <CardTitle className="font-display font-bold text-lg text-foreground">
-              Your Referral Link
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {userProfile?.isPaid ? (
-              <>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 py-2.5 min-w-0">
-                    <div className="font-body text-sm text-muted-foreground truncate">
-                      {referralLink ||
-                        "Complete registration to get your referral link"}
+                      ? "border-l-red-500"
+                      : "border-l-amber-500"
+                }`}
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                          latestSubmission.status === PaymentStatus.approved
+                            ? "bg-green-500/15"
+                            : latestSubmission.status === PaymentStatus.rejected
+                              ? "bg-red-500/15"
+                              : "bg-amber-500/15"
+                        }`}
+                      >
+                        {latestSubmission.status === PaymentStatus.approved ? (
+                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                        ) : latestSubmission.status ===
+                          PaymentStatus.rejected ? (
+                          <XCircle className="w-5 h-5 text-red-400" />
+                        ) : (
+                          <Clock className="w-5 h-5 text-amber-400" />
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-ui font-semibold text-sm text-foreground">
+                          Payment Status
+                        </div>
+                        <div className="text-xs text-muted-foreground font-body mt-0.5">
+                          UTR: {latestSubmission.utr} · ₹
+                          {latestSubmission.amount}
+                        </div>
+                        <div className="text-xs text-muted-foreground/60 font-body mt-0.5">
+                          Submitted:{" "}
+                          {new Date(
+                            Number(latestSubmission.timestamp) / 1_000_000,
+                          ).toLocaleDateString("en-IN", {
+                            day: "numeric",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={copyReferralLink}
-                    disabled={!referralLink}
-                    className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground shrink-0"
-                    data-ocid="dashboard.referral.copy.button"
-                  >
-                    {copied ? (
-                      <Check className="w-4 h-4" />
-                    ) : (
-                      <Copy className="w-4 h-4" />
-                    )}
-                    {copied ? "Copied!" : "Copy"}
-                  </Button>
-                </div>
-
-                {userProfile?.referralCode && (
-                  <div className="flex items-center flex-wrap gap-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-muted-foreground text-xs font-ui">
-                        Your code:
-                      </span>
-                      <code className="text-primary text-sm font-ui font-bold bg-primary/10 px-2 py-0.5 rounded">
-                        {userProfile.referralCode}
-                      </code>
-                    </div>
-
-                    {/* WhatsApp Share Button */}
-                    <Button
-                      size="sm"
-                      onClick={shareOnWhatsApp}
-                      disabled={!referralLink}
-                      className="bg-green-600 hover:bg-green-700 text-white shrink-0 gap-1.5"
-                      data-ocid="dashboard.referral.whatsapp.button"
+                    <Badge
+                      className={`shrink-0 font-ui text-xs ${
+                        latestSubmission.status === PaymentStatus.approved
+                          ? "bg-green-500/20 text-green-400 border-green-500/30"
+                          : latestSubmission.status === PaymentStatus.rejected
+                            ? "bg-red-500/20 text-red-400 border-red-500/30"
+                            : "bg-amber-500/20 text-amber-400 border-amber-500/30"
+                      }`}
+                      variant="outline"
+                      data-ocid="dashboard.payment_status.badge"
                     >
-                      <MessageCircle className="w-4 h-4" />
-                      Share on WhatsApp
-                    </Button>
+                      {latestSubmission.status === PaymentStatus.approved
+                        ? "Approved"
+                        : latestSubmission.status === PaymentStatus.rejected
+                          ? "Rejected"
+                          : "Pending Review"}
+                    </Badge>
+                  </div>
+                  {latestSubmission.status === PaymentStatus.rejected && (
+                    <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                      <p className="text-xs text-red-400 font-body">
+                        Your payment was rejected. Please contact admin or
+                        resubmit with the correct details.
+                      </p>
+                    </div>
+                  )}
+                  {latestSubmission.status === PaymentStatus.pending && (
+                    <div className="mt-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                      <p className="text-xs text-amber-400/80 font-body">
+                        Your payment is being reviewed. You'll get access once
+                        admin approves it.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* ── 4. Stats Cards ───────────────────────────────────────────────────── */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Wallet */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.1 }}
+            >
+              <Card
+                className="card-premium hover:border-primary/40 transition-colors cursor-pointer"
+                onClick={() => navigate({ to: "/wallet" })}
+                data-ocid="dashboard.wallet.card"
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-primary/20 flex items-center justify-center">
+                      <Wallet className="w-5 h-5 text-primary" />
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-primary/30 text-primary"
+                    >
+                      Wallet
+                    </Badge>
+                  </div>
+                  <div className="font-display font-black text-3xl text-gradient-gold">
+                    ₹{walletRs.toFixed(2)}
+                  </div>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Available balance
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Direct Referrals */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.15 }}
+            >
+              <Card className="card-premium">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-accent/20 flex items-center justify-center">
+                      <Users className="w-5 h-5 text-accent-foreground" />
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-accent/30 text-accent-foreground"
+                    >
+                      Level 1
+                    </Badge>
+                  </div>
+                  <div className="font-display font-black text-3xl text-foreground">
+                    {referralCount}
+                    <span className="text-muted-foreground text-lg font-ui font-normal ml-1">
+                      / 3
+                    </span>
+                  </div>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Direct referrals
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Total Network */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.2 }}
+            >
+              <Card className="card-premium">
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center">
+                      <TrendingUp className="w-5 h-5 text-green-400" />
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-green-500/30 text-green-400"
+                    >
+                      Network
+                    </Badge>
+                  </div>
+                  <div className="font-display font-black text-3xl text-foreground">
+                    {networkCount}
+                  </div>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Total network size
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Total Watch Time */}
+            <motion.div
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3, delay: 0.225 }}
+            >
+              <Card
+                className="card-premium"
+                data-ocid="dashboard.watchtime.card"
+              >
+                <CardContent className="p-5">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="w-10 h-10 rounded-xl bg-blue-500/15 flex items-center justify-center">
+                      <Timer className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-blue-500/30 text-blue-400"
+                    >
+                      Watch Time
+                    </Badge>
+                  </div>
+                  <div className="font-display font-black text-3xl text-foreground">
+                    {formatWatchTime(totalWatchSeconds)}
+                  </div>
+                  <p className="text-muted-foreground text-xs font-body mt-1">
+                    Total watched
+                  </p>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
+
+          {/* ── 5. Referral Link Card ─────────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.25 }}
+          >
+            <Card className="card-premium border-primary/20">
+              <CardHeader className="pb-3">
+                <CardTitle className="font-display font-bold text-lg text-foreground">
+                  Your Referral Link
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {userProfile?.isPaid ? (
+                  <>
+                    <div className="flex items-center gap-3">
+                      <div className="flex-1 bg-secondary/60 border border-border rounded-lg px-3 py-2.5 min-w-0">
+                        <div className="font-body text-sm text-muted-foreground truncate">
+                          {referralLink ||
+                            "Complete registration to get your referral link"}
+                        </div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={copyReferralLink}
+                        disabled={!referralLink}
+                        className="border-primary/40 text-primary hover:bg-primary hover:text-primary-foreground shrink-0"
+                        data-ocid="dashboard.referral.copy.button"
+                      >
+                        {copied ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Copy className="w-4 h-4" />
+                        )}
+                        {copied ? "Copied!" : "Copy"}
+                      </Button>
+                    </div>
+
+                    {userProfile?.referralCode && (
+                      <div className="flex items-center flex-wrap gap-3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-muted-foreground text-xs font-ui">
+                            Your code:
+                          </span>
+                          <code className="text-primary text-sm font-ui font-bold bg-primary/10 px-2 py-0.5 rounded">
+                            {userProfile.referralCode}
+                          </code>
+                        </div>
+
+                        {/* WhatsApp Share Button */}
+                        <Button
+                          size="sm"
+                          onClick={shareOnWhatsApp}
+                          disabled={!referralLink}
+                          className="bg-green-600 hover:bg-green-700 text-white shrink-0 gap-1.5"
+                          data-ocid="dashboard.referral.whatsapp.button"
+                        >
+                          <MessageCircle className="w-4 h-4" />
+                          Share on WhatsApp
+                        </Button>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div
+                    className="flex items-start gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-4"
+                    data-ocid="dashboard.referral.locked.card"
+                  >
+                    <div className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
+                      <Lock className="w-4 h-4 text-muted-foreground" />
+                    </div>
+                    <div>
+                      <p className="font-ui font-medium text-sm text-muted-foreground">
+                        Referral Code Pending
+                      </p>
+                      <p className="font-body text-xs text-muted-foreground/70 mt-0.5 leading-relaxed">
+                        Your referral code will be available after admin
+                        approves your payment. Once approved, you'll be able to
+                        invite friends and earn rewards.
+                      </p>
+                    </div>
                   </div>
                 )}
-              </>
-            ) : (
-              <div
-                className="flex items-start gap-3 rounded-lg border border-border bg-secondary/30 px-4 py-4"
-                data-ocid="dashboard.referral.locked.card"
-              >
-                <div className="mt-0.5 flex-shrink-0 w-8 h-8 rounded-full bg-muted flex items-center justify-center">
-                  <Lock className="w-4 h-4 text-muted-foreground" />
-                </div>
-                <div>
-                  <p className="font-ui font-medium text-sm text-muted-foreground">
-                    Referral Code Pending
-                  </p>
-                  <p className="font-body text-xs text-muted-foreground/70 mt-0.5 leading-relaxed">
-                    Your referral code will be available after admin approves
-                    your payment. Once approved, you'll be able to invite
-                    friends and earn rewards.
-                  </p>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
+              </CardContent>
+            </Card>
+          </motion.div>
 
-      {/* ── 6. Matrix Tree ────────────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.3 }}
-      >
-        <Card className="card-premium">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <CardTitle className="font-display font-bold text-lg text-foreground">
-                Referral Matrix Tree
-              </CardTitle>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className="text-xs border-primary/30 text-primary"
-                >
-                  Auto-expanded
-                </Badge>
-                <Badge
-                  variant="outline"
-                  className="text-xs border-green-500/30 text-green-400"
-                >
-                  3 slots/member
-                </Badge>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleTreeRefresh}
-                  disabled={isRefreshing || treeLoading}
-                  className="border-border font-ui text-xs h-7 px-2.5"
-                  data-ocid="dashboard.tree.secondary_button"
-                >
-                  <RefreshCw
-                    className={`w-3.5 h-3.5 mr-1 ${isRefreshing ? "animate-spin" : ""}`}
-                  />
-                  Refresh
-                </Button>
-              </div>
-            </div>
-            <p className="text-muted-foreground text-xs font-body mt-0.5">
-              Your complete downline network — auto-updates every 20 seconds
-            </p>
-          </CardHeader>
-          <CardContent>
-            {treeLoading ? (
-              <div
-                className="space-y-3"
-                data-ocid="dashboard.tree.loading_state"
-              >
-                {/* Level legend skeletons */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-4">
-                  {["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8"].map((k) => (
-                    <Skeleton
-                      key={k}
-                      className="h-8 rounded-lg animate-shimmer"
-                    />
-                  ))}
+          {/* ── 6. Matrix Tree ────────────────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.3 }}
+          >
+            <Card className="card-premium">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <CardTitle className="font-display font-bold text-lg text-foreground">
+                    Referral Matrix Tree
+                  </CardTitle>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-primary/30 text-primary"
+                    >
+                      Auto-expanded
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-xs border-green-500/30 text-green-400"
+                    >
+                      3 slots/member
+                    </Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleTreeRefresh}
+                      disabled={isRefreshing || treeLoading}
+                      className="border-border font-ui text-xs h-7 px-2.5"
+                      data-ocid="dashboard.tree.secondary_button"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 mr-1 ${isRefreshing ? "animate-spin" : ""}`}
+                      />
+                      Refresh
+                    </Button>
+                  </div>
                 </div>
-                {/* Tree skeletons */}
-                <div className="flex justify-center gap-3">
-                  {["t1", "t2", "t3"].map((k) => (
-                    <Skeleton
-                      key={k}
-                      className="h-16 w-28 rounded-xl animate-shimmer"
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : referralTree ? (
-              <ScrollArea className="w-full">
-                <MatrixTree root={referralTree} />
-              </ScrollArea>
-            ) : (
-              <div
-                className="py-10 text-center"
-                data-ocid="dashboard.tree.empty_state"
-              >
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
-                  <Users className="w-8 h-8 text-primary/50" />
-                </div>
-                <p className="text-foreground font-ui font-semibold text-sm mb-1">
-                  No referral tree yet
+                <p className="text-muted-foreground text-xs font-body mt-0.5">
+                  Your complete downline network — auto-updates every 20 seconds
                 </p>
-                <p className="text-muted-foreground font-body text-xs max-w-xs mx-auto">
-                  {userProfile?.isPaid
-                    ? "Share your referral link to start building your 3×15 matrix network!"
-                    : "Complete your payment to get your referral code and start inviting members."}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
+              </CardHeader>
+              <CardContent>
+                {treeLoading ? (
+                  <div
+                    className="space-y-3"
+                    data-ocid="dashboard.tree.loading_state"
+                  >
+                    {/* Level legend skeletons */}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-4">
+                      {["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8"].map(
+                        (k) => (
+                          <Skeleton
+                            key={k}
+                            className="h-8 rounded-lg animate-shimmer"
+                          />
+                        ),
+                      )}
+                    </div>
+                    {/* Tree skeletons */}
+                    <div className="flex justify-center gap-3">
+                      {["t1", "t2", "t3"].map((k) => (
+                        <Skeleton
+                          key={k}
+                          className="h-16 w-28 rounded-xl animate-shimmer"
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ) : referralTree ? (
+                  <ScrollArea className="w-full">
+                    <MatrixTree root={referralTree} />
+                  </ScrollArea>
+                ) : (
+                  <div
+                    className="py-10 text-center"
+                    data-ocid="dashboard.tree.empty_state"
+                  >
+                    <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center mx-auto mb-4">
+                      <Users className="w-8 h-8 text-primary/50" />
+                    </div>
+                    <p className="text-foreground font-ui font-semibold text-sm mb-1">
+                      No referral tree yet
+                    </p>
+                    <p className="text-muted-foreground font-body text-xs max-w-xs mx-auto">
+                      {userProfile?.isPaid
+                        ? "Share your referral link to start building your 3×15 matrix network!"
+                        : "Complete your payment to get your referral code and start inviting members."}
+                    </p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </motion.div>
 
-      {/* ── 7. Videos Quick Link ─────────────────────────────────────────────── */}
-      <motion.div
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.35 }}
-      >
-        <Card
-          className="card-premium border-accent/20 cursor-pointer hover:border-accent/40 transition-colors"
-          onClick={() => navigate({ to: "/videos" })}
-          data-ocid="dashboard.videos.card"
-        >
-          <CardContent className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
-              <Play className="w-6 h-6 text-accent-foreground" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <h3 className="font-display font-bold text-foreground text-base">
-                Browse Premium Content
-              </h3>
-              <p className="text-muted-foreground text-sm font-body">
-                Tutorials, Entertainment, Wellness, Devotional & more
-              </p>
-            </div>
-            <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
-          </CardContent>
-        </Card>
-      </motion.div>
+          {/* ── 7. Videos Quick Link ─────────────────────────────────────────────── */}
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, delay: 0.35 }}
+          >
+            <Card
+              className="card-premium border-accent/20 cursor-pointer hover:border-accent/40 transition-colors"
+              onClick={() => navigate({ to: "/videos" })}
+              data-ocid="dashboard.videos.card"
+            >
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-xl bg-accent/20 flex items-center justify-center">
+                  <Play className="w-6 h-6 text-accent-foreground" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h3 className="font-display font-bold text-foreground text-base">
+                    Browse Premium Content
+                  </h3>
+                  <p className="text-muted-foreground text-sm font-body">
+                    Tutorials, Entertainment, Wellness, Devotional & more
+                  </p>
+                </div>
+                <ChevronRight className="w-5 h-5 text-muted-foreground flex-shrink-0" />
+              </CardContent>
+            </Card>
+          </motion.div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

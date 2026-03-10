@@ -75,6 +75,8 @@ export interface Video {
   'createdAt' : bigint,
   'description' : string,
   'category' : string,
+  'channelUrl' : string,
+  'thumbnailUrl' : string,
 }
 export interface WatchRecord {
   'userId' : bigint,
@@ -87,7 +89,7 @@ export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addVideo' : ActorMethod<[string, string, string, string, bigint], undefined>,
   'addVideoWithPassword' : ActorMethod<
-    [string, string, string, string, string, bigint],
+    [string, string, string, string, string, bigint, string, string],
     undefined
   >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
@@ -100,6 +102,7 @@ export interface _SERVICE {
   'deleteUserWithPassword' : ActorMethod<[string, bigint], undefined>,
   'deleteVideo' : ActorMethod<[bigint], undefined>,
   'deleteVideoWithPassword' : ActorMethod<[string, bigint], undefined>,
+  'updateVideoChannelInfoWithPassword' : ActorMethod<[string, bigint, string, string], undefined>,
   'forceSetAdmin' : ActorMethod<[string], string>,
   'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
   'getAllPaymentSubmissionsWithPassword' : ActorMethod<

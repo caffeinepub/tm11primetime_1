@@ -35,6 +35,7 @@ actor {
     role : Text;
   };
 
+  // Stable Video type -- do NOT add fields here to keep upgrade compatibility
   type Video = {
     id : Nat;
     title : Text;
@@ -43,6 +44,25 @@ actor {
     description : Text;
     duration : Nat;
     createdAt : Int;
+  };
+
+  // Extra channel/thumbnail info stored separately for upgrade compatibility
+  type VideoExtra = {
+    channelUrl : Text;
+    thumbnailUrl : Text;
+  };
+
+  // Full Video returned to frontend (merges Video + VideoExtra)
+  type VideoFull = {
+    id : Nat;
+    title : Text;
+    category : Text;
+    url : Text;
+    description : Text;
+    duration : Nat;
+    createdAt : Int;
+    channelUrl : Text;
+    thumbnailUrl : Text;
   };
 
   type WatchRecord = {
@@ -122,6 +142,7 @@ actor {
 
   let users = Map.empty<Nat, User>();
   let videos = Map.empty<Nat, Video>();
+  let videoExtras = Map.empty<Nat, VideoExtra>();
   let watchRecords = Map.empty<Nat, WatchRecord>();
   let transactions = Map.empty<Nat, Transaction>();
   let principalToUserId = Map.empty<Principal, Nat>();
@@ -319,9 +340,28 @@ actor {
     summaryList.toArray();
   };
 
+  // Helper: merge Video + VideoExtra into VideoFull
+  func toVideoFull(v : Video) : VideoFull {
+    let extra = switch (videoExtras.get(v.id)) {
+      case (null) { { channelUrl = ""; thumbnailUrl = "" } };
+      case (?e) { e };
+    };
+    {
+      id = v.id;
+      title = v.title;
+      category = v.category;
+      url = v.url;
+      description = v.description;
+      duration = v.duration;
+      createdAt = v.createdAt;
+      channelUrl = extra.channelUrl;
+      thumbnailUrl = extra.thumbnailUrl;
+    };
+  };
+
   // PUBLIC query function - no authentication required (for admin panel)
-  public query func getAllVideosPublic() : async [Video] {
-    videos.values().toArray();
+  public query func getAllVideosPublic() : async [VideoFull] {
+    videos.values().toArray().map(toVideoFull);
   };
 
   // FULLY PUBLIC query function - NO authentication/permission check
@@ -594,7 +634,7 @@ actor {
   };
 
   // USER-ONLY function - only paid members or admin
-  public query ({ caller }) func getAllVideos() : async [Video] {
+  public query ({ caller }) func getAllVideos() : async [VideoFull] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view videos");
     };
@@ -613,11 +653,11 @@ actor {
       Runtime.trap("Unauthorized: Only paid members can view videos");
     };
 
-    videos.values().toArray();
+    videos.values().toArray().map(toVideoFull);
   };
 
   // USER-ONLY function - only paid members or admin
-  public query ({ caller }) func getVideosByCategory(category : Text) : async [Video] {
+  public query ({ caller }) func getVideosByCategory(category : Text) : async [VideoFull] {
     if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
       Runtime.trap("Unauthorized: Only users can view videos");
     };
@@ -636,7 +676,7 @@ actor {
       Runtime.trap("Unauthorized: Only paid members can view videos");
     };
 
-    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) });
+    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) }).map(toVideoFull);
   };
 
   // USER-ONLY function - only paid members
@@ -1040,7 +1080,7 @@ actor {
   };
 
   // PASSWORD-GATED function - adds video with password authentication
-  public shared func addVideoWithPassword(password : Text, title : Text, category : Text, url : Text, description : Text, duration : Nat) : async () {
+  public shared func addVideoWithPassword(password : Text, title : Text, category : Text, url : Text, description : Text, duration : Nat, channelUrl : Text, thumbnailUrl : Text) : async () {
     if (not verifyPassword(password)) {
       Runtime.trap("Unauthorized: Invalid password");
     };
@@ -1059,6 +1099,19 @@ actor {
     };
 
     videos.add(videoId, video);
+    videoExtras.add(videoId, { channelUrl; thumbnailUrl });
+  };
+
+  // PASSWORD-GATED function - updates video channel/thumbnail URLs
+  public shared func updateVideoChannelInfoWithPassword(password : Text, videoId : Nat, channelUrl : Text, thumbnailUrl : Text) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid password");
+    };
+
+    if (not videos.containsKey(videoId)) {
+      Runtime.trap("Video not found");
+    };
+    videoExtras.add(videoId, { channelUrl; thumbnailUrl });
   };
 
   // PASSWORD-GATED function - deletes video with password authentication
@@ -1072,6 +1125,7 @@ actor {
     };
 
     videos.remove(videoId);
+    videoExtras.remove(videoId);
   };
 
   // PASSWORD-GATED function - updates user status with password authentication

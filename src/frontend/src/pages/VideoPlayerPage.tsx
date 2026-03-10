@@ -13,6 +13,7 @@ import {
   Bell,
   CheckCircle,
   Clock,
+  ExternalLink,
   Loader2,
   Play,
   Trophy,
@@ -61,6 +62,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Step-by-step guide to building a powerful referral network from scratch. Learn the strategies used by top earners in the industry.",
     duration: BigInt(1800),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(2),
@@ -71,6 +74,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Deep dive into multi-level marketing and how to maximize your earnings through a structured referral system.",
     duration: BigInt(2700),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(3),
@@ -80,6 +85,8 @@ const SAMPLE_VIDEOS: Video[] = [
     description: "Catch up on the biggest Bollywood releases of the year.",
     duration: BigInt(3600),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(4),
@@ -90,6 +97,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Start your day with a powerful 30-minute yoga routine for energy and mental clarity.",
     duration: BigInt(1800),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(5),
@@ -100,6 +109,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Ancient wisdom adapted for contemporary challenges and professional life.",
     duration: BigInt(2400),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(6),
@@ -110,6 +121,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "In-depth look at India's booming tech sector and the opportunities it creates.",
     duration: BigInt(1500),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
 ];
 
@@ -216,6 +229,9 @@ export default function VideoPlayerPage() {
   const _gradient = video
     ? (CATEGORY_GRADIENTS[video.category] ?? CATEGORY_GRADIENTS.default)
     : CATEGORY_GRADIENTS.default;
+
+  // Read channel URL directly from video record (stored in backend)
+  const channelUrl = video?.channelUrl || null;
 
   if (videosLoading) {
     return (
@@ -344,6 +360,18 @@ export default function VideoPlayerPage() {
                         <CheckCircle className="w-3 h-3 mr-1" />
                         Completed
                       </Badge>
+                    )}
+                    {channelUrl && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground gap-1.5 font-ui"
+                        onClick={() => window.open(channelUrl, "_blank")}
+                        data-ocid="player.channel.button"
+                      >
+                        <ExternalLink className="w-3 h-3" />
+                        Visit Channel
+                      </Button>
                     )}
                   </div>
                 </div>

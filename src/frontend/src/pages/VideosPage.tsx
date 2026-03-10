@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -8,6 +9,7 @@ import {
   BookOpen,
   CheckCircle,
   Clock,
+  ExternalLink,
   GraduationCap,
   Heart,
   Loader2,
@@ -81,6 +83,10 @@ function VideoCard({ video, watchRecord, index, onClick }: VideoCardProps) {
 
   const ocidIndex = index + 1;
 
+  // Read channel URL and thumbnail directly from video record (stored in backend)
+  const channelUrl = video.channelUrl || null;
+  const thumbnailUrl = video.thumbnailUrl || null;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -97,7 +103,14 @@ function VideoCard({ video, watchRecord, index, onClick }: VideoCardProps) {
         <div
           className={`h-40 bg-gradient-to-br ${gradient} relative flex items-center justify-center`}
         >
-          <div className="w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center transition-transform hover:scale-110">
+          {thumbnailUrl && (
+            <img
+              src={thumbnailUrl}
+              alt={video.title}
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+          )}
+          <div className="relative w-14 h-14 rounded-full bg-white/20 backdrop-blur flex items-center justify-center transition-transform hover:scale-110">
             <Play className="w-6 h-6 text-white ml-0.5" />
           </div>
           {/* Duration badge */}
@@ -149,6 +162,22 @@ function VideoCard({ video, watchRecord, index, onClick }: VideoCardProps) {
               {video.description}
             </p>
           )}
+          {/* Channel link button */}
+          {channelUrl && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="mt-3 w-full h-7 text-xs border-primary/30 text-primary hover:bg-primary hover:text-primary-foreground gap-1.5 font-ui"
+              onClick={(e) => {
+                e.stopPropagation();
+                window.open(channelUrl, "_blank");
+              }}
+              data-ocid={`videos.channel.button.${ocidIndex}`}
+            >
+              <ExternalLink className="w-3 h-3" />
+              Visit Channel
+            </Button>
+          )}
         </CardContent>
       </Card>
     </motion.div>
@@ -166,6 +195,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Step-by-step guide to building a powerful referral network from scratch.",
     duration: BigInt(1800),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(2),
@@ -176,6 +207,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "Deep dive into multi-level marketing and how to maximize your earnings.",
     duration: BigInt(2700),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(3),
@@ -185,6 +218,8 @@ const SAMPLE_VIDEOS: Video[] = [
     description: "Catch up on the biggest Bollywood releases of the year.",
     duration: BigInt(3600),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(4),
@@ -194,6 +229,8 @@ const SAMPLE_VIDEOS: Video[] = [
     description: "Start your day with a powerful 30-minute yoga routine.",
     duration: BigInt(1800),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(5),
@@ -203,6 +240,8 @@ const SAMPLE_VIDEOS: Video[] = [
     description: "Ancient wisdom adapted for contemporary challenges.",
     duration: BigInt(2400),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
   {
     id: BigInt(6),
@@ -213,6 +252,8 @@ const SAMPLE_VIDEOS: Video[] = [
       "In-depth look at India's booming tech sector and opportunities.",
     duration: BigInt(1500),
     createdAt: BigInt(Date.now() * 1000000),
+    channelUrl: "",
+    thumbnailUrl: "",
   },
 ];
 

@@ -82,6 +82,7 @@ import {
   useReferralTreeByPhoneAdmin,
   useUpdateUserMutation,
   useUpdateUserStatusMutation,
+  useUpdateVideoChannelInfoMutation,
   useVerifyPaymentSubmissionMutation,
 } from "../hooks/useQueries";
 
@@ -106,6 +107,7 @@ interface AddVideoFormData {
   category: string;
   url: string;
   channelUrl: string;
+  thumbnailUrl: string;
   description: string;
   duration: string;
 }
@@ -115,6 +117,7 @@ const initialFormData: AddVideoFormData = {
   category: "",
   url: "",
   channelUrl: "",
+  thumbnailUrl: "",
   description: "",
   duration: "",
 };
@@ -755,6 +758,7 @@ export default function AdminPage() {
   const deleteUserMutation = useDeleteUserMutation();
   const addVideoMutation = useAddVideoMutation();
   const deleteVideoMutation = useDeleteVideoMutation();
+  const updateVideoChannelInfoMutation = useUpdateVideoChannelInfoMutation();
   const verifyPaymentMutation = useVerifyPaymentSubmissionMutation();
 
   const [addVideoOpen, setAddVideoOpen] = useState(false);
@@ -800,25 +804,7 @@ export default function AdminPage() {
     localStorage.setItem("admin_channels", JSON.stringify(channels));
   }, [channels]);
 
-  // ── Video channel URL map (localStorage) ──────────────────────────────────
-  // Maps video ID (string) -> channel URL
-  const [videoChannelMap, setVideoChannelMap] = useState<
-    Record<string, string>
-  >(() => {
-    try {
-      const raw = localStorage.getItem("admin_video_channels");
-      return raw ? (JSON.parse(raw) as Record<string, string>) : {};
-    } catch {
-      return {};
-    }
-  });
-
-  useEffect(() => {
-    localStorage.setItem(
-      "admin_video_channels",
-      JSON.stringify(videoChannelMap),
-    );
-  }, [videoChannelMap]);
+  // Video channel/thumbnail URLs are now stored in the backend, not localStorage
 
   // ── Matrix state ───────────────────────────────────────────────────────────
   const [selectedPhone, setSelectedPhone] = useState<string | null>(null);
@@ -984,14 +970,9 @@ export default function AdminPage() {
         url: videoForm.url,
         description: videoForm.description,
         duration: BigInt(durationNum),
+        channelUrl: videoForm.channelUrl.trim(),
+        thumbnailUrl: videoForm.thumbnailUrl.trim(),
       });
-      // Store channel URL mapping keyed by video URL
-      if (videoForm.channelUrl.trim()) {
-        setVideoChannelMap((prev) => ({
-          ...prev,
-          [videoForm.url.trim()]: videoForm.channelUrl.trim(),
-        }));
-      }
       toast.success("Video added successfully!");
       setVideoForm(initialFormData);
       setAddVideoOpen(false);
@@ -2068,6 +2049,26 @@ export default function AdminPage() {
                         )}
                       </div>
                       <div className="space-y-1.5">
+                        <Label
+                          htmlFor="vThumbnailUrl"
+                          className="font-ui text-sm"
+                        >
+                          Thumbnail URL
+                        </Label>
+                        <Input
+                          id="vThumbnailUrl"
+                          name="thumbnailUrl"
+                          value={videoForm.thumbnailUrl}
+                          onChange={handleVideoFormChange}
+                          placeholder="https://example.com/thumbnail.jpg (optional)"
+                          className="bg-input border-border font-body"
+                          data-ocid="admin.videos.thumbnail.input"
+                        />
+                        <p className="text-muted-foreground font-body text-xs">
+                          Custom thumbnail image URL for this video card.
+                        </p>
+                      </div>
+                      <div className="space-y-1.5">
                         <Label htmlFor="vDesc" className="font-ui text-sm">
                           Description
                         </Label>
@@ -2150,6 +2151,7 @@ export default function AdminPage() {
                           {[
                             "Title",
                             "Category",
+                            "Thumbnail",
                             "Channel URL",
                             "Duration",
                             "Actions",
@@ -2168,8 +2170,8 @@ export default function AdminPage() {
                           const ocidIndex = i + 1;
                           const durationSec = Number(video.duration);
                           const mins = Math.floor(durationSec / 60);
-                          const assignedChannelUrl =
-                            videoChannelMap[video.url] ?? "";
+                          const assignedChannelUrl = video.channelUrl ?? "";
+                          const assignedThumbnailUrl = video.thumbnailUrl ?? "";
                           return (
                             <TableRow
                               key={video.id.toString()}
@@ -2189,6 +2191,67 @@ export default function AdminPage() {
                                   {video.category}
                                 </Badge>
                               </TableCell>
+                              {/* Thumbnail cell */}
+                              <TableCell className="py-3">
+                                {assignedThumbnailUrl ? (
+                                  <div className="flex items-center gap-1.5">
+                                    <img
+                                      src={assignedThumbnailUrl}
+                                      alt="thumb"
+                                      className="w-12 h-8 object-cover rounded border border-border"
+                                    />
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      onClick={async () => {
+                                        const newUrl = prompt(
+                                          "Edit Thumbnail URL:",
+                                          assignedThumbnailUrl,
+                                        );
+                                        if (newUrl !== null) {
+                                          await updateVideoChannelInfoMutation.mutateAsync(
+                                            {
+                                              videoId: video.id,
+                                              channelUrl: assignedChannelUrl,
+                                              thumbnailUrl: newUrl.trim(),
+                                            },
+                                          );
+                                          toast.success("Thumbnail updated");
+                                        }
+                                      }}
+                                      className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-6 h-6 flex-shrink-0"
+                                      data-ocid={`admin.videos.thumbnail_edit_button.${ocidIndex}`}
+                                    >
+                                      <Pencil className="w-3 h-3" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={async () => {
+                                      const newUrl = prompt(
+                                        "Enter Thumbnail URL for this video:",
+                                      );
+                                      if (newUrl?.trim()) {
+                                        await updateVideoChannelInfoMutation.mutateAsync(
+                                          {
+                                            videoId: video.id,
+                                            channelUrl: assignedChannelUrl,
+                                            thumbnailUrl: newUrl.trim(),
+                                          },
+                                        );
+                                        toast.success("Thumbnail added");
+                                      }
+                                    }}
+                                    className="text-muted-foreground hover:text-primary text-xs h-7 px-2"
+                                    data-ocid={`admin.videos.thumbnail_add_button.${ocidIndex}`}
+                                  >
+                                    <Plus className="w-3 h-3 mr-1" />
+                                    Add
+                                  </Button>
+                                )}
+                              </TableCell>
                               <TableCell className="py-3 max-w-[180px]">
                                 {assignedChannelUrl ? (
                                   <div className="flex items-center gap-1.5">
@@ -2203,24 +2266,21 @@ export default function AdminPage() {
                                     <Button
                                       variant="ghost"
                                       size="icon"
-                                      onClick={() => {
+                                      onClick={async () => {
                                         const newUrl = prompt(
                                           "Edit Channel URL:",
                                           assignedChannelUrl,
                                         );
                                         if (newUrl !== null) {
-                                          if (newUrl.trim()) {
-                                            setVideoChannelMap((prev) => ({
-                                              ...prev,
-                                              [video.url]: newUrl.trim(),
-                                            }));
-                                          } else {
-                                            setVideoChannelMap((prev) => {
-                                              const next = { ...prev };
-                                              delete next[video.url];
-                                              return next;
-                                            });
-                                          }
+                                          await updateVideoChannelInfoMutation.mutateAsync(
+                                            {
+                                              videoId: video.id,
+                                              channelUrl: newUrl.trim(),
+                                              thumbnailUrl:
+                                                assignedThumbnailUrl,
+                                            },
+                                          );
+                                          toast.success("Channel URL updated");
                                         }
                                       }}
                                       className="text-muted-foreground hover:text-primary hover:bg-primary/10 w-6 h-6 flex-shrink-0"
@@ -2233,15 +2293,19 @@ export default function AdminPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => {
+                                    onClick={async () => {
                                       const newUrl = prompt(
                                         "Enter Channel URL for this video:",
                                       );
                                       if (newUrl?.trim()) {
-                                        setVideoChannelMap((prev) => ({
-                                          ...prev,
-                                          [video.url]: newUrl.trim(),
-                                        }));
+                                        await updateVideoChannelInfoMutation.mutateAsync(
+                                          {
+                                            videoId: video.id,
+                                            channelUrl: newUrl.trim(),
+                                            thumbnailUrl: assignedThumbnailUrl,
+                                          },
+                                        );
+                                        toast.success("Channel URL added");
                                       }
                                     }}
                                     className="text-muted-foreground hover:text-primary text-xs h-7 px-2"

@@ -15,6 +15,8 @@ export interface Video {
     createdAt: bigint;
     description: string;
     category: string;
+    channelUrl: string;
+    thumbnailUrl: string;
 }
 export interface ReferralNode {
     id: bigint;
@@ -86,7 +88,8 @@ export enum UserRole {
 }
 export interface backendInterface {
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
-    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
+    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
+    updateVideoChannelInfoWithPassword(password: string, videoId: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     claimFirstAdmin(): Promise<void>;
     deletePaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;

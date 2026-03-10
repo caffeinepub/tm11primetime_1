@@ -50,6 +50,8 @@ export const Video = IDL.Record({
   'createdAt' : IDL.Int,
   'description' : IDL.Text,
   'category' : IDL.Text,
+  'channelUrl' : IDL.Text,
+  'thumbnailUrl' : IDL.Text,
 });
 export const UserProfile = IDL.Record({
   'userId' : IDL.Nat,
@@ -97,7 +99,7 @@ export const idlService = IDL.Service({
       [],
     ),
   'addVideoWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Text],
       [],
       [],
     ),
@@ -108,6 +110,7 @@ export const idlService = IDL.Service({
   'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'deleteVideo' : IDL.Func([IDL.Nat], [], []),
   'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'updateVideoChannelInfoWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text, IDL.Text], [], []),
   'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
   'getAllPaymentSubmissions' : IDL.Func(
       [],
@@ -267,6 +270,8 @@ export const idlFactory = ({ IDL }) => {
     'createdAt' : IDL.Int,
     'description' : IDL.Text,
     'category' : IDL.Text,
+    'channelUrl' : IDL.Text,
+    'thumbnailUrl' : IDL.Text,
   });
   const UserProfile = IDL.Record({
     'userId' : IDL.Nat,
@@ -329,6 +334,7 @@ export const idlFactory = ({ IDL }) => {
     'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'deleteVideo' : IDL.Func([IDL.Nat], [], []),
     'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'updateVideoChannelInfoWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text, IDL.Text], [], []),
     'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
     'getAllPaymentSubmissions' : IDL.Func(
         [],

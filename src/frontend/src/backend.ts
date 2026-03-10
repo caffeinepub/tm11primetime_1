@@ -97,6 +97,8 @@ export interface Video {
     createdAt: bigint;
     description: string;
     category: string;
+    channelUrl: string;
+    thumbnailUrl: string;
 }
 export interface ReferralNode {
     id: bigint;
@@ -169,7 +171,7 @@ export enum UserRole {
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
     addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
-    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
+    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
     claimFirstAdmin(): Promise<void>;
     deletePaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
@@ -177,6 +179,7 @@ export interface backendInterface {
     deleteUserWithPassword(password: string, userId: bigint): Promise<void>;
     deleteVideo(videoId: bigint): Promise<void>;
     deleteVideoWithPassword(password: string, videoId: bigint): Promise<void>;
+    updateVideoChannelInfoWithPassword(password: string, videoId: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
     forceSetAdmin(principalText: string): Promise<string>;
     getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
     getAllPaymentSubmissionsWithPassword(password: string): Promise<Array<PaymentSubmission>>;
@@ -263,17 +266,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async addVideoWithPassword(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: bigint): Promise<void> {
+    async addVideoWithPassword(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: bigint, arg6: string, arg7: string): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
+                const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
+            const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
             return result;
         }
     }
@@ -372,6 +375,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.deleteVideoWithPassword(arg0, arg1);
+            return result;
+        }
+    }
+    async updateVideoChannelInfoWithPassword(arg0: string, arg1: bigint, arg2: string, arg3: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateVideoChannelInfoWithPassword(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateVideoChannelInfoWithPassword(arg0, arg1, arg2, arg3);
             return result;
         }
     }

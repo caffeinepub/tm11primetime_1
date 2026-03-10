@@ -430,12 +430,16 @@ export function useAddVideoMutation() {
       url,
       description,
       duration,
+      channelUrl,
+      thumbnailUrl,
     }: {
       title: string;
       category: string;
       url: string;
       description: string;
       duration: bigint;
+      channelUrl: string;
+      thumbnailUrl: string;
     }) => {
       if (!actor) throw new Error("Not connected");
       await actor.addVideoWithPassword(
@@ -445,6 +449,8 @@ export function useAddVideoMutation() {
         url,
         description,
         duration,
+        channelUrl,
+        thumbnailUrl,
       );
     },
     onSuccess: () => {
@@ -461,6 +467,34 @@ export function useDeleteVideoMutation() {
     mutationFn: async (videoId: bigint) => {
       if (!actor) throw new Error("Not connected");
       await actor.deleteVideoWithPassword("aakbn@1014", videoId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["allVideos"] });
+      queryClient.invalidateQueries({ queryKey: ["allVideosPublic"] });
+    },
+  });
+}
+
+export function useUpdateVideoChannelInfoMutation() {
+  const { actor } = useActor();
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      videoId,
+      channelUrl,
+      thumbnailUrl,
+    }: {
+      videoId: bigint;
+      channelUrl: string;
+      thumbnailUrl: string;
+    }) => {
+      if (!actor) throw new Error("Not connected");
+      await actor.updateVideoChannelInfoWithPassword(
+        "aakbn@1014",
+        videoId,
+        channelUrl,
+        thumbnailUrl,
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["allVideos"] });
