@@ -164,7 +164,7 @@ export function useAllVideos() {
     queryKey: ["allVideos"],
     queryFn: async () => {
       if (!actor) return [];
-      return actor.getAllVideos();
+      return actor.getAllVideosPublic();
     },
     enabled: !!actor && !isFetching,
   });

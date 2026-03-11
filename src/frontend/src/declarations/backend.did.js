@@ -320,7 +320,7 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'addVideoWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Text],
         [],
         [],
       ),
