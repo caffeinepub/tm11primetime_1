@@ -1,79 +1,94 @@
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import {
   AlertCircle,
-  ArrowLeft,
+  ArrowRight,
+  Check,
   CheckCircle,
   ChevronLeft,
   Copy,
   Crown,
   Gift,
-  Hash,
   IndianRupee,
   Loader2,
   Mail,
   Phone,
   Receipt,
+  Shield,
+  Smartphone,
   User as UserIcon,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { User } from "../backend.d";
-import { useActor } from "../hooks/useActor";
-import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
-  useRegisterMutation,
-  useSubmitPaymentProofMutation,
-} from "../hooks/useQueries";
+  getActorWithRetry,
+  getGlobalActor,
+  normalizePhone,
+} from "../globalActor";
+import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
 const UPI_ID = "yespay.bizsbiz12758@yesbankltd";
+const PAYMENT_AMOUNT = 118;
 
-// Normalize phone: strip +, spaces, dashes, country code prefix (91 for India)
-function normalizePhone(raw: string): string {
-  // Remove all non-digit characters
-  let digits = raw.replace(/\D/g, "");
-  // Strip leading Indian country code: 91XXXXXXXXXX -> XXXXXXXXXX
-  if (digits.length === 12 && digits.startsWith("91")) {
-    digits = digits.slice(2);
-  }
-  // Strip leading 0
-  if (digits.length === 11 && digits.startsWith("0")) {
-    digits = digits.slice(1);
-  }
-  return digits;
+// ─── Types ────────────────────────────────────────────────────────────────────
+type FormMode = "phone" | "checking" | "details";
+type PageStep = "form" | "payment" | "success";
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+function humanError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  if (
+    lower.includes("connect") ||
+    lower.includes("fetch") ||
+    lower.includes("network")
+  )
+    return "Could not connect to the server. Please check your connection and try again.";
+  if (
+    lower.includes("already registered") ||
+    lower.includes("already exists") ||
+    lower.includes("phone number already")
+  )
+    return "This number is already registered.";
+  if (lower.includes("not functioning") || lower.includes("actor"))
+    return "Service temporarily unavailable. Retrying…";
+  return msg || "Something went wrong. Please try again.";
 }
 
-// Generate all candidate phone formats to try in order.
-// The backend may have stored the number in any of these formats.
-function phoneVariants(raw: string): string[] {
-  const digits10 = normalizePhone(raw);
-  const with91 = `91${digits10}`;
-  const withPlus91 = `+91${digits10}`;
-  const withPlus = `+${digits10}`;
-  // Deduplicate while preserving order
-  return [...new Set([digits10, with91, withPlus91, withPlus, raw.trim()])];
+function isAlreadyRegisteredError(err: unknown): boolean {
+  const msg = (err instanceof Error ? err.message : String(err)).toLowerCase();
+  return (
+    msg.includes("already registered") ||
+    msg.includes("already exists") ||
+    msg.includes("phone number already") ||
+    msg.includes("not functioning") ||
+    msg.includes("actor register") ||
+    msg.includes("anonymous") ||
+    msg.includes("cannot register") ||
+    msg.includes("user exists")
+  );
 }
 
+async function findUserByPhone(rawPhone: string): Promise<User | null> {
+  const actor = await getActorWithRetry();
+  const normalized = normalizePhone(rawPhone.trim());
+  return actor.getUserByPhone(normalized);
+}
+
+// ─── Component ───────────────────────────────────────────────────────────────
 export default function RegisterPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
-  const { actor, isFetching: actorFetching } = useActor();
   const search = useSearch({ from: "/register" });
 
-  // If redirected with ?step=payment (user is already registered but unpaid),
-  // skip straight to the payment step without waiting for the backend check.
   const initialStep =
-    (search as { step?: string; ref?: string }).step === "payment"
-      ? "payment"
-      : "form";
-
-  // Pre-fill referral code from URL param ?ref=CODE
-  const initialRef = (search as { step?: string; ref?: string }).ref ?? "";
+    (search as { step?: string }).step === "payment" ? "payment" : "form";
+  const initialRef = (search as { ref?: string }).ref ?? "";
 
   const [form, setForm] = useState({
     name: phoneAuth.userName ?? "",
@@ -81,956 +96,767 @@ export default function RegisterPage() {
     phone: phoneAuth.phone ?? "",
     referredBy: initialRef,
   });
-  // "phone" = only phone field shown; "details" = new user, show full form; "checking" = checking backend
-  const [formMode, setFormMode] = useState<"phone" | "checking" | "details">(
-    "phone",
+  const [formMode, setFormMode] = useState<FormMode>(
+    phoneAuth.isLoggedIn ? "details" : "phone",
   );
-  const [step, setStep] = useState<"form" | "payment" | "success">(initialStep);
-  const [error, setError] = useState<string | null>(null);
-
-  // UTR submission form state
+  const [step, setStep] = useState<PageStep>(initialStep);
+  const [error, setError] = useState("");
+  const [isRegistering, setIsRegistering] = useState(false);
   const [showUtrForm, setShowUtrForm] = useState(false);
   const [utrForm, setUtrForm] = useState({
     txId: "",
     userName: phoneAuth.userName ?? "",
     phone: phoneAuth.phone ?? "",
-    amount: "118",
+    amount: String(PAYMENT_AMOUNT),
   });
+  const [utrError, setUtrError] = useState("");
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  // When jumping straight to payment step (from login), ensure UTR form is pre-filled
-  useEffect(() => {
-    if (initialStep === "payment") {
-      setUtrForm((prev) => ({
-        ...prev,
-        userName: prev.userName || phoneAuth.userName || "",
-        phone: prev.phone || phoneAuth.phone || "",
-      }));
-    }
-  }, [initialStep, phoneAuth.userName, phoneAuth.phone]);
-  const [utrError, setUtrError] = useState<string | null>(null);
-
-  const registerMutation = useRegisterMutation();
-  const submitPaymentProofMutation = useSubmitPaymentProofMutation();
-
-  // If user has a stored phone in localStorage, auto-check their status when actor is ready
-  const storedPhoneRef = useRef(phoneAuth.phone);
-  const initialStepRef = useRef(initialStep);
   const phoneAuthRef = useRef(phoneAuth);
   phoneAuthRef.current = phoneAuth;
 
+  // Auto-login if already paid
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional one-time mount check
   useEffect(() => {
-    if (!actor || actorFetching) return;
-    if (initialStepRef.current === "payment") return; // already on payment step, don't auto-redirect
-    const storedPhone = storedPhoneRef.current;
-    if (!storedPhone) return; // no stored session, user must enter phone manually
+    if (phoneAuth.isLoggedIn && initialStep !== "payment") {
+      // Check if they need to pay
+      const checkUser = async () => {
+        try {
+          const actor = await getGlobalActor();
+          const user = await actor.getUserByPhone(
+            normalizePhone(phoneAuth.phone ?? ""),
+          );
+          if (user?.isPaid) {
+            navigate({ to: "/dashboard" });
+          } else {
+            setStep("payment");
+            if (user) {
+              setUtrForm((p) => ({
+                ...p,
+                userName: user.name || p.userName,
+                phone: user.phone || phoneAuth.phone || p.phone,
+              }));
+            }
+          }
+        } catch {
+          // Ignore — just show form
+        }
+      };
+      checkUser();
+    }
+  }, []);
 
-    // Auto-login: user has a stored session, verify and redirect
-    // Try all phone variants in case the backend stored it in a different format
-    const variants = phoneVariants(storedPhone);
+  // ─── Phase 1: Check phone ──────────────────────────────────────────────
+  const handlePhoneCheck = async () => {
+    const raw = form.phone.trim();
+    if (!raw) {
+      setError("Please enter your mobile number.");
+      return;
+    }
+    const normalized = normalizePhone(raw);
+    if (normalized.length < 10) {
+      setError("Please enter a valid 10-digit mobile number.");
+      return;
+    }
+
+    setError("");
     setFormMode("checking");
 
-    (async () => {
-      try {
-        let user: User | null = null;
-        for (const variant of variants) {
-          user = await actor.getUserByPhone(variant);
-          if (user) break;
-        }
-        if (!user) {
-          // Session is stale — clear it and show clean phone form
-          phoneAuthRef.current.logout();
-          setFormMode("phone");
-          return;
-        }
-        // Registered — refresh session and redirect
+    try {
+      const user = await findUserByPhone(raw);
+      if (user) {
         phoneAuthRef.current.login(user.phone, user.id, user.name);
         if (user.isPaid) {
           navigate({ to: "/dashboard" });
         } else {
-          setUtrForm((prev) => ({
-            ...prev,
-            userName: user!.name || phoneAuthRef.current.userName || "",
-            phone: user!.phone || storedPhone,
+          setUtrForm((p) => ({
+            ...p,
+            userName: user.name || p.userName,
+            phone: user.phone || normalized,
           }));
           setStep("payment");
+          setFormMode("details");
         }
-      } catch {
-        // Error — fall back to phone entry
-        setFormMode("phone");
+      } else {
+        // New user — show registration form
+        setFormMode("details");
+        setForm((p) => ({ ...p, phone: normalized }));
       }
-    })();
-  }, [actor, actorFetching, navigate]);
-
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-    setError(null);
+    } catch (err) {
+      setError(humanError(err));
+      setFormMode("phone");
+    }
   };
 
-  // Phase 1: User entered phone, check if they exist
-  const handlePhoneCheck = async () => {
-    const rawPhone = form.phone.trim();
-    if (!rawPhone) {
-      setError("Please enter your mobile number.");
+  // ─── Phase 2: Register ─────────────────────────────────────────────────
+  const handleRegister = async () => {
+    if (!form.name.trim()) {
+      setError("Please enter your full name.");
       return;
     }
-    const variants = phoneVariants(rawPhone);
-
-    setError(null);
-    setFormMode("checking");
-
-    // Wait for actor to be ready (retry up to 15 times, 800ms apart = up to 12s)
-    let actorReady = actor;
-    for (let i = 0; i < 15 && !actorReady; i++) {
-      await new Promise((r) => setTimeout(r, 800));
-      actorReady = actor;
-    }
-
-    if (!actorReady) {
-      setFormMode("phone");
-      setError(
-        "Could not connect. Please check your internet connection and try again.",
-      );
+    if (!form.email.trim() || !form.email.includes("@")) {
+      setError("Please enter a valid email address.");
       return;
     }
+    setError("");
+    setIsRegistering(true);
+    const normalized = normalizePhone(form.phone);
 
-    // Retry the actual backend call up to 4 times (covers ICP canister "cold start" latency)
-    const MAX_RETRIES = 4;
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      try {
-        // Try all phone variants — backend may have stored in any format
-        let existingUser: User | null = null;
-        for (const variant of variants) {
-          try {
-            existingUser = await actorReady.getUserByPhone(variant);
-            if (existingUser) break;
-          } catch {
-            // try next variant
-          }
-        }
-
-        if (existingUser) {
-          // User already registered — log them in directly, no error shown
-          phoneAuth.login(
-            existingUser.phone,
-            existingUser.id,
-            existingUser.name,
-          );
-          if (existingUser.isPaid) {
-            navigate({ to: "/dashboard" });
-          } else {
-            setUtrForm((prev) => ({
-              ...prev,
-              userName: existingUser!.name || "",
-              phone: existingUser!.phone || variants[0],
-            }));
-            setStep("payment");
-          }
+    try {
+      // Belt-and-suspenders: double-check not already registered
+      const actor = await getActorWithRetry();
+      const existing = await actor.getUserByPhone(normalized);
+      if (existing) {
+        phoneAuthRef.current.login(existing.phone, existing.id, existing.name);
+        if (existing.isPaid) {
+          navigate({ to: "/dashboard" });
           return;
         }
-        // User not found with any variant — new user, show registration fields
-        setFormMode("details");
+        setUtrForm((p) => ({
+          ...p,
+          userName: existing.name || form.name,
+          phone: existing.phone || normalized,
+        }));
+        setStep("payment");
         return;
-      } catch (_err) {
-        if (attempt < MAX_RETRIES - 1) {
-          // Wait before retry: 1s, 2s, 3s
-          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
-          continue;
-        }
-        // All retries exhausted
-        setFormMode("phone");
-        setError("Could not connect to the server. Please try again.");
       }
-    }
-  };
 
-  // Phase 2: User is new, submit full registration form
-  const handleRegister = async () => {
-    if (!form.name.trim() || !form.email.trim()) {
-      setError("Please fill in your Full Name and Email to register.");
-      return;
-    }
-
-    setError(null);
-
-    const normalizedPhone = normalizePhone(form.phone);
-    try {
-      await registerMutation.mutateAsync({
-        name: form.name,
-        email: form.email,
-        phone: normalizedPhone,
-        referredBy: form.referredBy,
-      });
-
-      // Save phone session after register
-      phoneAuth.login(normalizedPhone, null, form.name);
-
-      setStep("payment");
-      setUtrForm((prev) => ({
-        ...prev,
-        userName: form.name,
-        phone: normalizedPhone,
+      const userId = await actor.registerUser(
+        form.name.trim(),
+        form.email.trim(),
+        normalized,
+        form.referredBy.trim(),
+      );
+      phoneAuthRef.current.login(normalized, userId, form.name.trim());
+      setUtrForm((p) => ({
+        ...p,
+        userName: form.name.trim(),
+        phone: normalized,
       }));
+      setStep("payment");
     } catch (err) {
-      const msg = err instanceof Error ? err.message : "Registration failed";
-
-      // If "already registered" slips through, try login again with all variants
-      if (
-        msg.toLowerCase().includes("already registered") ||
-        msg.toLowerCase().includes("already exists") ||
-        msg.toLowerCase().includes("phone number already")
-      ) {
-        if (actor) {
-          try {
-            const variants = phoneVariants(form.phone.trim());
-            let existingUser: User | null = null;
-            for (const variant of variants) {
-              existingUser = await actor.getUserByPhone(variant);
-              if (existingUser) break;
-            }
-            if (existingUser) {
-              phoneAuth.login(
-                existingUser.phone,
-                existingUser.id,
-                existingUser.name,
-              );
-              if (existingUser.isPaid) {
-                navigate({ to: "/dashboard" });
-              } else {
-                setUtrForm((prev) => ({
-                  ...prev,
-                  userName: existingUser!.name || form.name,
-                  phone: existingUser!.phone || form.phone,
-                }));
-                setStep("payment");
-              }
+      if (isAlreadyRegisteredError(err)) {
+        // Try to recover by looking up the user
+        try {
+          const actor2 = await getActorWithRetry();
+          const existing = await actor2.getUserByPhone(normalized);
+          if (existing) {
+            phoneAuthRef.current.login(
+              existing.phone,
+              existing.id,
+              existing.name,
+            );
+            if (existing.isPaid) {
+              navigate({ to: "/dashboard" });
               return;
             }
-          } catch {
-            // ignore
+            setUtrForm((p) => ({
+              ...p,
+              userName: existing.name || form.name,
+              phone: existing.phone || normalized,
+            }));
+            setStep("payment");
+            return;
           }
+        } catch {
+          /* ignore */
         }
-        // Lookup failed — reset to phone mode and let them try again cleanly
-        setFormMode("phone");
         setError(
-          "This number is already registered. Please tap 'Login / Continue' to sign in.",
+          "This number is already registered. Please go back and enter your number to login.",
         );
-        return;
+        setFormMode("phone");
+      } else {
+        setError(humanError(err));
       }
-
-      setError(msg);
+    } finally {
+      setIsRegistering(false);
     }
   };
 
-  const handleShowUtrForm = () => {
-    setUtrForm({
-      txId: "",
-      userName: form.name || phoneAuth.userName || "",
-      phone: form.phone || phoneAuth.phone || "",
-      amount: String(total),
-    });
-    setUtrError(null);
-    setShowUtrForm(true);
-  };
-
-  const handleUtrFormChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setUtrForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-    setUtrError(null);
-  };
-
+  // ─── Payment submission ────────────────────────────────────────────────
   const handleConfirmPayment = async () => {
     if (!utrForm.txId.trim()) {
-      setUtrError("Please enter your Transaction ID or UTR Number.");
+      setUtrError("Please enter your Transaction ID / UTR number.");
       return;
     }
     if (!utrForm.phone.trim()) {
-      setUtrError("Please enter your phone number.");
+      setUtrError("Please enter the phone number used for this payment.");
       return;
     }
-    if (!utrForm.amount.trim()) {
-      setUtrError("Please enter the amount you paid.");
-      return;
-    }
-    if (!utrForm.userName.trim()) {
-      setUtrError("Please enter your name.");
-      return;
-    }
-
+    setUtrError("");
+    setIsSubmittingPayment(true);
     try {
-      setUtrError(null);
-      await submitPaymentProofMutation.mutateAsync({
+      // Use global actor directly — bypasses useActor/useInternetIdentity
+      const actor = await getActorWithRetry();
+      const submissionPhone = normalizePhone(utrForm.phone) || utrForm.phone;
+      await actor.submitPaymentProof({
         utr: utrForm.txId.trim(),
-        name: utrForm.userName.trim(),
-        phone: utrForm.phone.trim(),
-        amount: utrForm.amount.trim(),
+        name: utrForm.userName.trim() || phoneAuth.userName || "Member",
+        phone: submissionPhone,
+        amount: utrForm.amount,
       });
-
+      setShowUtrForm(false);
       setStep("success");
-      toast.success("Payment proof submitted! Admin will verify shortly.");
+      toast.success("Payment submitted! Admin will verify shortly.");
     } catch (err) {
-      const msg =
-        err instanceof Error
-          ? err.message
-          : "Payment submission failed. Please try again.";
-      setUtrError(msg);
-      toast.error(msg);
+      setUtrError(humanError(err));
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
-  const membershipFee = 100;
-  const gst = 18;
-  const gstAmount = Math.round((membershipFee * gst) / 100);
-  const total = membershipFee + gstAmount;
+  const copyUpi = () => {
+    navigator.clipboard.writeText(UPI_ID);
+    setCopied(true);
+    toast.success("UPI ID copied!");
+    setTimeout(() => setCopied(false), 2000);
+  };
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="flex items-center gap-4 px-6 py-5 border-b border-border">
-        <Link
-          to="/"
-          className="text-muted-foreground hover:text-foreground transition-colors"
-          data-ocid="register.back.link"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center">
-            <Crown className="w-4 h-4 text-primary-foreground" />
-          </div>
-          <span className="font-display font-bold text-lg text-gradient-gold">
-            Tm11primeTime
-          </span>
+  // ─── Render: Form Step ────────────────────────────────────────────────
+  if (step === "form") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-10">
+        {/* Back to home */}
+        <div className="w-full max-w-md mb-4">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => navigate({ to: "/" })}
+            className="text-muted-foreground hover:text-foreground -ml-2"
+            data-ocid="register.back.button"
+          >
+            <ChevronLeft className="w-4 h-4 mr-1" />
+            Back
+          </Button>
         </div>
-      </header>
 
-      <div className="flex-1 flex items-center justify-center px-4 py-10">
-        <div className="w-full max-w-lg">
-          {/* Step Indicators */}
-          <div className="flex items-center justify-center gap-3 mb-8">
-            {["Register", "Payment", "Success"].map((s, i) => (
-              <div key={s} className="flex items-center gap-2">
-                <div
-                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-ui font-bold transition-all ${
-                    (step === "form" && i === 0) ||
-                    (step === "payment" && i === 1) ||
-                    (step === "success" && i === 2)
-                      ? "bg-primary text-primary-foreground"
-                      : i <
-                          (step === "payment" ? 1 : step === "success" ? 2 : 0)
-                        ? "bg-green-500 text-white"
-                        : "bg-muted text-muted-foreground"
-                  }`}
-                >
-                  {i < (step === "payment" ? 1 : step === "success" ? 3 : 0) ? (
-                    <CheckCircle className="w-4 h-4" />
-                  ) : (
-                    i + 1
-                  )}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md"
+        >
+          <Card className="bg-card border-border shadow-card">
+            <CardHeader className="pb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 border border-primary/30 flex items-center justify-center">
+                  <Crown className="w-4 h-4 text-primary" />
                 </div>
-                <span
-                  className={`text-sm font-ui hidden sm:block ${
-                    (step === "form" && i === 0) ||
-                    (step === "payment" && i === 1) ||
-                    (step === "success" && i === 2)
-                      ? "text-foreground font-medium"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {s}
+                <span className="font-display text-lg font-bold text-gradient-gold">
+                  Tm11primeTime
                 </span>
-                {i < 2 && (
-                  <div className="w-8 h-px bg-border hidden sm:block" />
-                )}
               </div>
-            ))}
-          </div>
-
-          {/* Step: Form */}
-          {step === "form" && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="card-premium">
-                <CardHeader className="pb-4">
-                  <div className="flex items-center gap-2.5 mb-1">
-                    <div className="w-9 h-9 rounded-full bg-primary/15 border border-primary/30 flex items-center justify-center">
-                      <Phone className="w-4 h-4 text-primary" />
+              <CardTitle className="font-display text-xl">
+                {formMode === "details" ? "Create Account" : "Welcome Back"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <AnimatePresence mode="wait">
+                {formMode === "phone" || formMode === "checking" ? (
+                  <motion.div
+                    key="phone"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="space-y-4"
+                  >
+                    <div className="space-y-1.5">
+                      <Label htmlFor="phone" className="text-foreground/80">
+                        Mobile Number
+                      </Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="phone"
+                          name="phone"
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="10-digit mobile number"
+                          value={form.phone}
+                          onChange={(e) => {
+                            setForm((p) => ({ ...p, phone: e.target.value }));
+                            setError("");
+                          }}
+                          onKeyDown={(e) =>
+                            e.key === "Enter" && handlePhoneCheck()
+                          }
+                          disabled={formMode === "checking"}
+                          className="pl-10 bg-secondary border-border"
+                          data-ocid="register.phone.input"
+                          autoComplete="tel"
+                          autoFocus
+                        />
+                      </div>
                     </div>
-                    <CardTitle className="font-display font-bold text-2xl text-foreground">
-                      Login / Register
-                    </CardTitle>
-                  </div>
-                  <p className="text-muted-foreground text-sm font-body">
-                    Enter your mobile number to login or register
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {error && (
-                    <Alert
-                      variant="destructive"
-                      data-ocid="register.form.error_state"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      <AlertDescription className="font-body text-sm">
-                        {error}
-                      </AlertDescription>
-                    </Alert>
-                  )}
 
-                  {/* Phone Number — always shown */}
-                  <div className="space-y-1.5">
-                    <Label
-                      htmlFor="phone"
-                      className="font-ui text-sm font-semibold text-foreground"
-                    >
-                      Mobile Number *
-                    </Label>
-                    <div className="relative">
-                      <Phone className="absolute left-3.5 top-1/2 -translate-y-1/2 w-5 h-5 text-primary" />
-                      <Input
-                        id="phone"
-                        name="phone"
-                        type="tel"
-                        value={form.phone}
-                        onChange={(e) => {
-                          handleChange(e);
-                          // Reset to phone-only mode if user changes number
-                          if (formMode === "details") setFormMode("phone");
-                        }}
-                        placeholder="+91 98765 43210"
-                        className="pl-10 h-12 text-base bg-input border-border font-body border-primary/40 focus:border-primary ring-primary/20"
-                        autoComplete="tel"
-                        data-ocid="register.phone.input"
-                        disabled={formMode === "checking"}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground font-body">
-                      Your mobile number is your primary account identifier
-                    </p>
-                  </div>
-
-                  {/* Phase 1: Show only "Continue" button to check phone */}
-                  {formMode === "phone" && (
-                    <Button
-                      className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
-                      onClick={handlePhoneCheck}
-                      disabled={actorFetching}
-                      data-ocid="register.phone_check.button"
-                    >
-                      {actorFetching ? (
-                        <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                      ) : null}
-                      {actorFetching ? "Connecting..." : "Login / Continue"}
-                    </Button>
-                  )}
-
-                  {/* Checking state */}
-                  {formMode === "checking" && (
-                    <div
-                      className="flex items-center justify-center gap-2 py-3 text-muted-foreground font-body text-sm"
-                      data-ocid="register.form.loading_state"
-                    >
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Checking your account...
-                    </div>
-                  )}
-
-                  {/* Phase 2: New user — show registration fields */}
-                  {formMode === "details" && (
-                    <>
-                      {/* Divider */}
-                      <div className="relative flex items-center gap-3">
-                        <div className="flex-1 h-px bg-border" />
-                        <span className="text-xs text-muted-foreground font-ui uppercase tracking-widest">
-                          New User — Profile Details
-                        </span>
-                        <div className="flex-1 h-px bg-border" />
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="name"
-                          className="font-ui text-sm text-foreground/80"
-                        >
-                          Full Name *
-                        </Label>
-                        <div className="relative">
-                          <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                          <Input
-                            id="name"
-                            name="name"
-                            value={form.name}
-                            onChange={handleChange}
-                            placeholder="Enter your full name"
-                            className="pl-9 bg-input border-border font-body"
-                            data-ocid="register.name.input"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="email"
-                          className="font-ui text-sm text-foreground/80"
-                        >
-                          Email Address *
-                        </Label>
-                        <div className="relative">
-                          <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                          <Input
-                            id="email"
-                            name="email"
-                            type="email"
-                            value={form.email}
-                            onChange={handleChange}
-                            placeholder="your@email.com"
-                            className="pl-9 bg-input border-border font-body"
-                            data-ocid="register.email.input"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="space-y-1.5">
-                        <Label
-                          htmlFor="referredBy"
-                          className="font-ui text-sm text-foreground/80"
-                        >
-                          Referral Code{initialRef ? "" : " (Optional)"}
-                        </Label>
-                        <div className="relative">
-                          <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                          <Input
-                            id="referredBy"
-                            name="referredBy"
-                            value={form.referredBy}
-                            onChange={initialRef ? undefined : handleChange}
-                            readOnly={!!initialRef}
-                            placeholder="Enter referral code"
-                            className={`pl-9 bg-input border-border font-body ${initialRef ? "bg-primary/10 border-primary/40 text-primary font-semibold cursor-default" : ""}`}
-                            data-ocid="register.referral.input"
-                          />
-                        </div>
-                        {initialRef && (
-                          <p className="text-xs text-primary font-ui font-medium">
-                            Referral code applied automatically
-                          </p>
-                        )}
-                      </div>
-
-                      <Button
-                        className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5"
-                        onClick={handleRegister}
-                        disabled={registerMutation.isPending}
-                        data-ocid="register.submit.button"
+                    {error && (
+                      <div
+                        className="flex items-start gap-2 text-destructive text-sm"
+                        data-ocid="register.phone.error_state"
                       >
-                        {registerMutation.isPending ? (
-                          <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                        ) : null}
-                        {registerMutation.isPending
-                          ? "Registering..."
-                          : "Register & Continue to Payment"}
-                      </Button>
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{error}</span>
+                      </div>
+                    )}
 
-                      <button
-                        type="button"
+                    <Button
+                      onClick={handlePhoneCheck}
+                      disabled={formMode === "checking"}
+                      className="w-full bg-primary text-primary-foreground font-ui font-semibold"
+                      data-ocid="register.phone.submit_button"
+                    >
+                      {formMode === "checking" ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Checking your account…
+                        </>
+                      ) : (
+                        <>
+                          Login / Continue
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </>
+                      )}
+                    </Button>
+                  </motion.div>
+                ) : (
+                  <motion.div
+                    key="details"
+                    initial={{ opacity: 0, x: 10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    className="space-y-4"
+                  >
+                    <p className="text-sm text-muted-foreground">
+                      Number not registered. Fill in your details to create an
+                      account.
+                    </p>
+
+                    {/* Phone (read-only) */}
+                    <div className="space-y-1.5">
+                      <Label className="text-foreground/80">
+                        Mobile Number
+                      </Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          value={form.phone}
+                          readOnly
+                          className="pl-10 bg-secondary border-border opacity-70"
+                          data-ocid="register.phone_readonly.input"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Full Name */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="name" className="text-foreground/80">
+                        Full Name <span className="text-destructive">*</span>
+                      </Label>
+                      <div className="relative">
+                        <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="name"
+                          name="name"
+                          placeholder="Your full name"
+                          value={form.name}
+                          onChange={(e) => {
+                            setForm((p) => ({ ...p, name: e.target.value }));
+                            setError("");
+                          }}
+                          className="pl-10 bg-secondary border-border"
+                          data-ocid="register.name.input"
+                          autoFocus
+                        />
+                      </div>
+                    </div>
+
+                    {/* Email */}
+                    <div className="space-y-1.5">
+                      <Label htmlFor="email" className="text-foreground/80">
+                        Email <span className="text-destructive">*</span>
+                      </Label>
+                      <div className="relative">
+                        <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="email"
+                          name="email"
+                          type="email"
+                          placeholder="your@email.com"
+                          value={form.email}
+                          onChange={(e) => {
+                            setForm((p) => ({ ...p, email: e.target.value }));
+                            setError("");
+                          }}
+                          className="pl-10 bg-secondary border-border"
+                          data-ocid="register.email.input"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Referral Code */}
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="referredBy"
+                        className="text-foreground/80"
+                      >
+                        Referral Code{" "}
+                        <span className="text-muted-foreground text-xs">
+                          (optional)
+                        </span>
+                      </Label>
+                      <Input
+                        id="referredBy"
+                        name="referredBy"
+                        placeholder="Enter referral code"
+                        value={form.referredBy}
+                        onChange={(e) =>
+                          setForm((p) => ({
+                            ...p,
+                            referredBy: e.target.value,
+                          }))
+                        }
+                        readOnly={!!initialRef}
+                        className={`bg-secondary border-border ${
+                          initialRef ? "opacity-70 cursor-not-allowed" : ""
+                        }`}
+                        data-ocid="register.referral.input"
+                      />
+                      {initialRef && (
+                        <p className="text-xs text-muted-foreground">
+                          🔒 Referral code locked
+                        </p>
+                      )}
+                    </div>
+
+                    {error && (
+                      <div
+                        className="flex items-start gap-2 text-destructive text-sm"
+                        data-ocid="register.details.error_state"
+                      >
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{error}</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <Button
+                        variant="outline"
                         onClick={() => {
                           setFormMode("phone");
-                          setError(null);
+                          setError("");
                         }}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto font-ui"
+                        className="flex-1 border-border"
                         data-ocid="register.back_to_phone.button"
                       >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                        Use a different number
-                      </button>
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-
-          {/* Step: Payment */}
-          {step === "payment" && (
-            <motion.div
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              <Card className="card-premium">
-                <CardHeader className="pb-4">
-                  <CardTitle className="font-display font-bold text-2xl text-foreground">
-                    Complete Payment
-                  </CardTitle>
-                  <p className="text-muted-foreground text-sm font-body">
-                    One-time membership fee to activate your account
-                  </p>
-                </CardHeader>
-                <CardContent className="space-y-5">
-                  {/* Payment Breakdown */}
-                  <div className="bg-secondary/50 rounded-xl p-5 space-y-3 border border-border">
-                    <div className="flex justify-between text-sm font-ui text-foreground/80">
-                      <span>Membership Fee</span>
-                      <span>₹{membershipFee}</span>
-                    </div>
-                    <div className="flex justify-between text-sm font-ui text-muted-foreground">
-                      <span>GST ({gst}%)</span>
-                      <span>₹{gstAmount}</span>
-                    </div>
-                    <div className="border-t border-border pt-3 flex justify-between font-display font-bold text-lg">
-                      <span className="text-foreground">Total</span>
-                      <span className="text-gradient-gold">₹{total}</span>
-                    </div>
-                  </div>
-
-                  {/* Bonus Info */}
-                  <div className="bg-primary/10 border border-primary/30 rounded-xl p-4 flex items-start gap-3">
-                    <Gift className="w-5 h-5 text-primary flex-shrink-0 mt-0.5 animate-float" />
-                    <div>
-                      <p className="text-primary font-ui font-semibold text-sm">
-                        Joining Bonus: ₹150
-                      </p>
-                      <p className="text-muted-foreground text-xs font-body mt-1">
-                        Will be instantly credited to your wallet upon payment
-                        completion
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* UPI ID Display Box */}
-                  <div className="space-y-2">
-                    <p className="text-sm font-ui font-semibold text-foreground/80">
-                      Pay via UPI
-                    </p>
-                    <div className="flex items-center gap-2 bg-muted/60 border border-border rounded-lg px-3 py-2.5">
-                      <span className="flex-1 font-mono text-sm text-foreground truncate select-all">
-                        {UPI_ID}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard
-                            .writeText(UPI_ID)
-                            .then(() => {
-                              toast.success("UPI ID copied!");
-                            })
-                            .catch(() => {
-                              toast.error(
-                                "Failed to copy. Please copy manually.",
-                              );
-                            });
-                        }}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-primary/10 hover:bg-primary/20 text-primary font-ui font-medium text-xs transition-colors flex-shrink-0"
-                        aria-label="Copy UPI ID"
-                        data-ocid="register.upi_id.button"
+                        <ChevronLeft className="w-4 h-4 mr-1" />
+                        Back
+                      </Button>
+                      <Button
+                        onClick={handleRegister}
+                        disabled={isRegistering}
+                        className="flex-1 bg-primary text-primary-foreground font-ui font-semibold"
+                        data-ocid="register.submit_button"
                       >
-                        <Copy className="w-3.5 h-3.5" />
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Instructions */}
-                  <p className="text-sm font-body text-muted-foreground leading-relaxed text-center px-2">
-                    Open your UPI app, paste the UPI ID and complete the
-                    payment, then tap{" "}
-                    <span className="font-semibold text-foreground">
-                      'I have Paid'
-                    </span>{" "}
-                    below.
-                  </p>
-
-                  {/* UPI App Deep-link Buttons */}
-                  <div className="grid grid-cols-3 gap-2">
-                    {/* PhonePe */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.location.href = `phonepe://pay?pa=${UPI_ID}`;
-                      }}
-                      className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 border-purple-500 text-purple-600 hover:bg-purple-500/10 transition-colors font-ui font-semibold text-xs"
-                      data-ocid="register.phonepay.button"
-                    >
-                      <span className="text-lg leading-none">📱</span>
-                      <span>PhonePe</span>
-                    </button>
-
-                    {/* Google Pay */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.location.href = `tez://upi/pay?pa=${UPI_ID}`;
-                      }}
-                      className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 border-blue-500 text-blue-600 hover:bg-blue-500/10 transition-colors font-ui font-semibold text-xs"
-                      data-ocid="register.gpay.button"
-                    >
-                      <span className="text-lg leading-none">💳</span>
-                      <span>Google Pay</span>
-                    </button>
-
-                    {/* BHIM UPI */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        window.location.href = `upi://pay?pa=${UPI_ID}`;
-                      }}
-                      className="flex flex-col items-center gap-1.5 px-2 py-3 rounded-xl border-2 border-amber-500 text-amber-600 hover:bg-amber-500/10 transition-colors font-ui font-semibold text-xs"
-                      data-ocid="register.bhim.button"
-                    >
-                      <span className="text-lg leading-none">🏦</span>
-                      <span>BHIM UPI</span>
-                    </button>
-                  </div>
-
-                  {error && (
-                    <Alert
-                      variant="destructive"
-                      data-ocid="register.payment.error_state"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      <AlertDescription className="font-body text-sm">
-                        {error}
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  <AnimatePresence mode="wait">
-                    {!showUtrForm ? (
-                      <motion.div
-                        key="paid-button"
-                        initial={{ opacity: 0, y: 8 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <Button
-                          className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5 glow-gold"
-                          onClick={handleShowUtrForm}
-                          data-ocid="register.payment.submit_button"
-                        >
-                          ✅ I have Paid
-                        </Button>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="utr-form"
-                        initial={{ opacity: 0, y: 12 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -8 }}
-                        transition={{ duration: 0.25 }}
-                        className="space-y-4"
-                      >
-                        {/* UTR Form Header */}
-                        <div className="flex items-center gap-2 pb-1 border-b border-border">
-                          <Receipt className="w-4 h-4 text-primary flex-shrink-0" />
-                          <span className="font-ui font-semibold text-sm text-foreground">
-                            Submit Payment Details
-                          </span>
-                        </div>
-
-                        {utrError && (
-                          <Alert
-                            variant="destructive"
-                            data-ocid="register.utr.error_state"
-                          >
-                            <AlertCircle className="w-4 h-4" />
-                            <AlertDescription className="font-body text-sm">
-                              {utrError}
-                            </AlertDescription>
-                          </Alert>
+                        {isRegistering ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Register"
                         )}
-
-                        {/* Transaction ID / UTR */}
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="txId"
-                            className="font-ui text-sm text-foreground/80"
-                          >
-                            Transaction ID / UTR Number *
-                          </Label>
-                          <div className="relative">
-                            <Hash className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="txId"
-                              name="txId"
-                              value={utrForm.txId}
-                              onChange={handleUtrFormChange}
-                              placeholder="Enter Transaction ID or UTR"
-                              className="pl-9 bg-input border-border font-body"
-                              autoComplete="off"
-                              data-ocid="register.utr.input"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Phone */}
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="utrPhone"
-                            className="font-ui text-sm text-foreground/80"
-                          >
-                            Phone Number *
-                          </Label>
-                          <div className="relative">
-                            <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="utrPhone"
-                              name="phone"
-                              type="tel"
-                              value={utrForm.phone}
-                              onChange={handleUtrFormChange}
-                              placeholder="+91 98765 43210"
-                              className="pl-9 bg-input border-border font-body"
-                              data-ocid="register.utr_phone.input"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Amount */}
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="utrAmount"
-                            className="font-ui text-sm text-foreground/80"
-                          >
-                            Amount Paid (₹) *
-                          </Label>
-                          <div className="relative">
-                            <IndianRupee className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="utrAmount"
-                              name="amount"
-                              type="number"
-                              min="1"
-                              value={utrForm.amount}
-                              onChange={handleUtrFormChange}
-                              placeholder="Enter amount paid"
-                              className="pl-9 bg-input border-border font-body"
-                              data-ocid="register.utr_amount.input"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Name */}
-                        <div className="space-y-1.5">
-                          <Label
-                            htmlFor="utrUserName"
-                            className="font-ui text-sm text-foreground/80"
-                          >
-                            Your Name *
-                          </Label>
-                          <div className="relative">
-                            <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                            <Input
-                              id="utrUserName"
-                              name="userName"
-                              value={utrForm.userName}
-                              onChange={handleUtrFormChange}
-                              placeholder="Enter your full name"
-                              className="pl-9 bg-input border-border font-body"
-                              data-ocid="register.utr_name.input"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Submit */}
-                        <Button
-                          className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base py-5 glow-gold"
-                          onClick={handleConfirmPayment}
-                          disabled={submitPaymentProofMutation.isPending}
-                          data-ocid="register.utr.submit_button"
-                        >
-                          {submitPaymentProofMutation.isPending ? (
-                            <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                          ) : null}
-                          {submitPaymentProofMutation.isPending
-                            ? "Submitting..."
-                            : "Confirm & Submit Proof"}
-                        </Button>
-
-                        {/* Back link */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setShowUtrForm(false);
-                            setUtrError(null);
-                          }}
-                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mx-auto font-ui"
-                          data-ocid="register.utr_form.cancel.button"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                          Back to payment options
-                        </button>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  <p className="text-center text-xs text-muted-foreground font-body">
-                    Secured by Internet Computer blockchain
-                  </p>
-                </CardContent>
-              </Card>
-
-              {/* Go to Dashboard — secondary option below the payment card */}
-              <div className="mt-5 flex flex-col items-center gap-2">
-                <p className="text-xs text-muted-foreground font-body">
-                  Already submitted payment?
-                </p>
-                <button
-                  type="button"
-                  onClick={() => navigate({ to: "/dashboard" })}
-                  className="flex items-center gap-2 px-5 py-2.5 rounded-lg border border-border bg-secondary/40 hover:bg-secondary/70 text-foreground/70 hover:text-foreground text-sm font-ui font-medium transition-all"
-                  data-ocid="register.payment.goto_dashboard.button"
-                >
-                  Go to Dashboard
-                </button>
-              </div>
-            </motion.div>
-          )}
-
-          {/* Step: Success */}
-          {step === "success" && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.4 }}
-            >
-              <Card className="card-premium text-center">
-                <CardContent className="p-8 space-y-6">
-                  <div className="w-20 h-20 rounded-full bg-primary/20 flex items-center justify-center mx-auto glow-gold">
-                    <CheckCircle className="w-10 h-10 text-primary" />
-                  </div>
-                  <div>
-                    <h2 className="font-display font-black text-2xl text-gradient-gold mb-2">
-                      Payment Proof Submitted!
-                    </h2>
-                    <p className="text-muted-foreground font-body">
-                      Your membership will activate once admin verifies your
-                      payment. ₹150 joining bonus will be credited to your
-                      wallet upon approval.
-                    </p>
-                  </div>
-                  <div className="bg-primary/10 border border-primary/30 rounded-xl p-4">
-                    <div className="text-base font-ui font-semibold text-primary">
-                      Pending Verification
+                      </Button>
                     </div>
-                    <div className="text-muted-foreground text-sm font-body mt-1">
-                      Admin will review your payment proof shortly
-                    </div>
-                  </div>
-                  <Button
-                    className="w-full bg-primary text-primary-foreground font-display font-bold"
-                    onClick={() => navigate({ to: "/dashboard" })}
-                    data-ocid="register.success.dashboard.button"
-                  >
-                    Go to Dashboard
-                  </Button>
-                </CardContent>
-              </Card>
-            </motion.div>
-          )}
-        </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </CardContent>
+          </Card>
+        </motion.div>
       </div>
+    );
+  }
+
+  // ─── Render: Payment Step ─────────────────────────────────────────────
+  if (step === "payment") {
+    return (
+      <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md space-y-4"
+        >
+          {/* Header */}
+          <div className="text-center">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 border border-primary/30 mb-3 glow-gold">
+              <IndianRupee className="w-7 h-7 text-primary" />
+            </div>
+            <h1 className="font-display text-2xl font-bold">
+              Activate Membership
+            </h1>
+            <p className="text-muted-foreground text-sm mt-1">
+              Pay ₹118 via UPI to activate your account
+            </p>
+          </div>
+
+          {/* Payment Card */}
+          <Card className="bg-card border-border">
+            <CardContent className="p-5 space-y-4">
+              {/* Amount */}
+              <div className="flex items-center justify-between py-3 border-b border-border">
+                <span className="text-muted-foreground text-sm font-ui">
+                  Amount
+                </span>
+                <span className="font-display text-2xl font-bold text-primary">
+                  ₹118
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground text-right">
+                ₹100 + 18% GST = ₹118
+              </div>
+
+              {/* UPI ID */}
+              <div className="space-y-1.5">
+                <Label className="text-foreground/80 text-xs uppercase tracking-wide font-ui">
+                  UPI ID
+                </Label>
+                <div className="flex items-center gap-2 bg-secondary border border-border rounded-lg px-3 py-2">
+                  <span className="font-ui text-sm text-foreground flex-1 break-all">
+                    {UPI_ID}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    onClick={copyUpi}
+                    className="flex-shrink-0 w-8 h-8"
+                    data-ocid="payment.copy_upi.button"
+                  >
+                    {copied ? (
+                      <Check className="w-4 h-4 text-green-400" />
+                    ) : (
+                      <Copy className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              </div>
+
+              {/* UPI Apps */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  {
+                    name: "Google Pay",
+                    scheme: `gpay://upi/pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
+                  },
+                  {
+                    name: "PhonePe",
+                    scheme: `phonepe://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
+                  },
+                  {
+                    name: "Paytm",
+                    scheme: `paytmmp://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
+                  },
+                  {
+                    name: "BHIM UPI",
+                    scheme: `upi://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
+                  },
+                ].map((app) => (
+                  <a
+                    key={app.name}
+                    href={app.scheme}
+                    className="flex items-center justify-center gap-1.5 bg-secondary border border-border rounded-lg py-2 px-3 text-sm font-ui hover:border-primary/40 transition-colors"
+                    data-ocid="payment.upi_app.button"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 text-primary" />
+                    {app.name}
+                  </a>
+                ))}
+              </div>
+
+              {/* Submit UTR */}
+              {!showUtrForm ? (
+                <Button
+                  onClick={() => setShowUtrForm(true)}
+                  className="w-full bg-primary text-primary-foreground font-ui font-semibold"
+                  data-ocid="payment.submit_utr.button"
+                >
+                  <Receipt className="w-4 h-4 mr-2" />
+                  I've Paid — Submit Transaction ID
+                </Button>
+              ) : (
+                <AnimatePresence>
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    className="space-y-3 border-t border-border pt-4"
+                  >
+                    <h3 className="font-ui font-semibold text-sm">
+                      Payment Details
+                    </h3>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-foreground/80 text-sm">
+                        Transaction ID / UTR{" "}
+                        <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="12-digit UTR number"
+                        value={utrForm.txId}
+                        onChange={(e) => {
+                          setUtrForm((p) => ({ ...p, txId: e.target.value }));
+                          setUtrError("");
+                        }}
+                        className="bg-secondary border-border"
+                        data-ocid="payment.utr.input"
+                        maxLength={20}
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-foreground/80 text-sm">
+                        Your Phone Number{" "}
+                        <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        value={utrForm.phone}
+                        onChange={(e) =>
+                          setUtrForm((p) => ({ ...p, phone: e.target.value }))
+                        }
+                        className="bg-secondary border-border"
+                        data-ocid="payment.phone.input"
+                        type="tel"
+                        inputMode="numeric"
+                      />
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label className="text-foreground/80 text-sm">
+                        Amount
+                      </Label>
+                      <Input
+                        value={`₹${utrForm.amount}`}
+                        readOnly
+                        className="bg-secondary border-border opacity-70"
+                        data-ocid="payment.amount.input"
+                      />
+                    </div>
+
+                    {utrError && (
+                      <div
+                        className="flex items-start gap-2 text-destructive text-sm"
+                        data-ocid="payment.utr.error_state"
+                      >
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{utrError}</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        onClick={() => setShowUtrForm(false)}
+                        className="flex-1 border-border"
+                        data-ocid="payment.cancel.button"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleConfirmPayment}
+                        disabled={isSubmittingPayment}
+                        className="flex-1 bg-primary text-primary-foreground font-ui font-semibold"
+                        data-ocid="payment.confirm.button"
+                      >
+                        {isSubmittingPayment ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          "Submit"
+                        )}
+                      </Button>
+                    </div>
+                  </motion.div>
+                </AnimatePresence>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Earning preview */}
+          <Card className="bg-card/60 border-border">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <Gift className="w-4 h-4 text-primary" />
+                <span className="text-sm font-ui font-medium">
+                  After payment approval
+                </span>
+              </div>
+              <ul className="space-y-1 text-sm text-muted-foreground">
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-green-400" /> ₹150 joining
+                  bonus credited
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-green-400" /> Referral code
+                  unlocked
+                </li>
+                <li className="flex items-center gap-1.5">
+                  <Check className="w-3.5 h-3.5 text-green-400" /> Premium video
+                  library access
+                </li>
+              </ul>
+            </CardContent>
+          </Card>
+
+          {phoneAuth.isLoggedIn && (
+            <Button
+              variant="ghost"
+              onClick={() => navigate({ to: "/dashboard" })}
+              className="w-full text-muted-foreground"
+              data-ocid="payment.dashboard.button"
+            >
+              Go to Dashboard
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          )}
+        </motion.div>
+      </div>
+    );
+  }
+
+  // ─── Render: Success Step ─────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-4 py-10">
+      <motion.div
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="w-full max-w-md text-center"
+      >
+        <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-green-500/10 border border-green-500/30 mb-6">
+          <CheckCircle className="w-10 h-10 text-green-400" />
+        </div>
+        <h1 className="font-display text-2xl font-bold mb-2">
+          Payment Submitted!
+        </h1>
+        <p className="text-muted-foreground mb-6">
+          Your payment details have been submitted. Admin will verify and
+          approve within a few hours.
+        </p>
+        <Card className="bg-card border-border mb-6">
+          <CardContent className="p-4 text-sm text-left space-y-2">
+            <div className="flex items-center gap-2 text-amber">
+              <Shield className="w-4 h-4" />
+              <span className="font-ui font-medium">What happens next?</span>
+            </div>
+            <ul className="space-y-1 text-muted-foreground pl-6">
+              <li>Admin verifies your UTR number</li>
+              <li>₹150 joining bonus is credited to your wallet</li>
+              <li>Your referral code is activated</li>
+              <li>Full access to video library is unlocked</li>
+            </ul>
+          </CardContent>
+        </Card>
+        <Button
+          onClick={() => navigate({ to: "/dashboard" })}
+          className="w-full bg-primary text-primary-foreground font-ui font-semibold"
+          data-ocid="payment.success.dashboard.button"
+        >
+          Go to Dashboard
+          <ArrowRight className="w-4 h-4 ml-2" />
+        </Button>
+      </motion.div>
     </div>
   );
 }

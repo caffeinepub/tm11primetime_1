@@ -2,7 +2,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
@@ -21,7 +20,6 @@ import {
 import { motion } from "motion/react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import type { Video } from "../backend.d";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import {
   useAllVideos,
@@ -51,7 +49,28 @@ function formatDuration(seconds: bigint): string {
   return `${m}:${remaining.toString().padStart(2, "0")}`;
 }
 
-// Sample videos matching the ones in VideosPage
+function getYouTubeEmbedUrl(url: string): string {
+  try {
+    // Already an embed URL
+    if (url.includes("youtube.com/embed/")) {
+      return url;
+    }
+    // youtu.be short URL: https://youtu.be/VIDEO_ID
+    if (url.includes("youtu.be/")) {
+      const videoId = url.split("youtu.be/")[1]?.split(/[?&]/)[0];
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`;
+    }
+    // Standard watch URL: https://www.youtube.com/watch?v=VIDEO_ID
+    if (url.includes("youtube.com/watch")) {
+      const urlObj = new URL(url);
+      const videoId = urlObj.searchParams.get("v");
+      if (videoId) return `https://www.youtube.com/embed/${videoId}`;
+    }
+  } catch {
+    // fall through
+  }
+  return url;
+}
 
 export default function VideoPlayerPage() {
   const { id } = useParams({ from: "/layout/videos/$id" });
@@ -71,11 +90,9 @@ export default function VideoPlayerPage() {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
-  // Find the video from real data or sample data
   const videosSource = allVideos ?? [];
   const video = videosSource.find((v) => v.id.toString() === id) ?? null;
 
-  // Load existing watch record
   useEffect(() => {
     if (!watchHistory || !id) return;
     const record = watchHistory.find((r) => r.videoId.toString() === id);
@@ -89,7 +106,6 @@ export default function VideoPlayerPage() {
     }
   }, [watchHistory, id]);
 
-  // Simulate watch progress when "playing"
   useEffect(() => {
     if (!isPlaying || !video) return;
     intervalRef.current = setInterval(() => {
@@ -103,7 +119,6 @@ export default function VideoPlayerPage() {
     };
   }, [isPlaying, video]);
 
-  // Check completion
   useEffect(() => {
     if (!video || hasSaved) return;
     const durationSec = Number(video.duration);
@@ -123,7 +138,6 @@ export default function VideoPlayerPage() {
         subscribed,
       });
       setHasSaved(true);
-      // Persist cumulative watch time to localStorage for admin panel display
       if (phoneAuth.phone) {
         const key = `watchTime_${phoneAuth.phone}`;
         const existing = Number.parseInt(localStorage.getItem(key) ?? "0", 10);
@@ -151,13 +165,13 @@ export default function VideoPlayerPage() {
     ? Math.min(100, (watchedSeconds / Number(video.duration)) * 100)
     : 0;
 
-  // gradient used for future thumbnail display
   const _gradient = video
     ? (CATEGORY_GRADIENTS[video.category] ?? CATEGORY_GRADIENTS.default)
     : CATEGORY_GRADIENTS.default;
 
-  // Read channel URL directly from video record (stored in backend)
   const channelUrl = video?.channelUrl || null;
+  const isYouTube =
+    video?.url.includes("youtube") || video?.url.includes("youtu.be");
 
   if (videosLoading) {
     return (
@@ -193,7 +207,6 @@ export default function VideoPlayerPage() {
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
-      {/* Back Button */}
       <button
         type="button"
         onClick={() => navigate({ to: "/videos" })}
@@ -212,15 +225,14 @@ export default function VideoPlayerPage() {
           transition={{ duration: 0.3 }}
         >
           <div className="relative rounded-2xl overflow-hidden bg-card border border-border shadow-card">
-            {/* Actual video embed */}
             <div className="aspect-video relative">
-              {video.url.includes("youtube") ||
-              video.url.includes("youtu.be") ? (
+              {isYouTube ? (
                 <iframe
-                  src={video.url}
+                  src={getYouTubeEmbedUrl(video.url)}
                   title={video.title}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
+                  referrerPolicy="strict-origin-when-cross-origin"
                   className="absolute inset-0 w-full h-full"
                   data-ocid="player.editor"
                 />
@@ -243,7 +255,6 @@ export default function VideoPlayerPage() {
               )}
             </div>
 
-            {/* Completion overlay */}
             {isCompleted && (
               <div className="absolute top-3 right-3">
                 <div className="bg-green-500/90 backdrop-blur rounded-full flex items-center gap-1.5 px-3 py-1.5">
@@ -324,7 +335,6 @@ export default function VideoPlayerPage() {
                 Completion Requirements
               </h2>
 
-              {/* Watch Progress */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
@@ -355,7 +365,6 @@ export default function VideoPlayerPage() {
                 </div>
               </div>
 
-              {/* Simulate watch (for demo) */}
               {!isCompleted && (
                 <div className="flex gap-2">
                   <Button
@@ -380,7 +389,6 @@ export default function VideoPlayerPage() {
                 </div>
               )}
 
-              {/* Subscribe Requirement */}
               <div className="flex items-center justify-between border-t border-border pt-4">
                 <div className="flex items-center gap-3">
                   <Bell className="w-4 h-4 text-primary" />
@@ -408,7 +416,6 @@ export default function VideoPlayerPage() {
                 </div>
               </div>
 
-              {/* Completion Status */}
               {isCompleted ? (
                 <Alert
                   className="border-green-500/30 bg-green-500/10"

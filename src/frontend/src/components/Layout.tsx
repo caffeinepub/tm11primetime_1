@@ -9,6 +9,7 @@ import {
   Menu,
   PlayCircle,
   ShieldCheck,
+  Tv,
   Wallet,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
@@ -25,6 +26,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Videos", href: "/videos", icon: PlayCircle },
+  { label: "Channels", href: "/channels", icon: Tv },
   { label: "Wallet", href: "/wallet", icon: Wallet },
   { label: "Payment", href: "/register", icon: CreditCard },
   { label: "Admin", href: "/admin", icon: ShieldCheck, adminOnly: true },

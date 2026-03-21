@@ -14,7 +14,6 @@ import {
   Calendar,
   Check,
   CheckCircle,
-  CheckCircle2,
   ChevronRight,
   Clock,
   Copy,
@@ -40,14 +39,16 @@ import {
   XCircle,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import type { ReferralNode, Video, WatchRecord } from "../backend.d";
+import type { ReferralNode, Video } from "../backend.d";
 import { PaymentStatus } from "../backend.d";
+import { MyChannelTab } from "../components/MyChannelTab";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import type { WatchRecord } from "../hooks/useQueries";
 import {
   useMyPaymentSubmissions,
-  useReferralTreeByCode,
+  useReferralTreeById,
   useUserByPhone,
   useVideosByCategory,
   useWatchHistory,
@@ -436,6 +437,11 @@ function MatrixNode({ node, depth, maxDepth, slotIndex }: MatrixNodeProps) {
               </span>
             </div>
           )}
+          {node.referredByCode && depth > 0 && (
+            <div className="font-ui text-[9px] text-muted-foreground/50 truncate max-w-[80px] pl-0.5">
+              ID: {node.referredByCode}
+            </div>
+          )}
           <code className="font-ui text-[9px] text-muted-foreground bg-black/20 rounded px-1 py-0.5 truncate block">
             {node.referralCode}
           </code>
@@ -726,12 +732,24 @@ export default function DashboardPage() {
   const { data: userProfile, isLoading: userLoading } = useUserByPhone(
     phoneAuth.phone,
   );
-  const { data: referralTree, isLoading: treeLoading } = useReferralTreeByCode(
-    userProfile?.referralCode ?? null,
+  const { data: referralTree, isLoading: treeLoading } = useReferralTreeById(
+    userProfile?.id ?? null,
   );
-  const { data: watchHistory } = useWatchHistory(phoneAuth.userId ?? null);
-  const totalWatchSeconds =
-    watchHistory?.reduce((sum, r) => sum + Number(r.watchedSeconds), 0) ?? 0;
+  // Watch time from backend
+  const [backendWatchSeconds, setBackendWatchSeconds] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    if (!phoneAuth.phone) return;
+    import("../globalActor").then(({ getGlobalActor, normalizePhone }) => {
+      getGlobalActor()
+        .then((actor) =>
+          actor.getUserWatchTimeByPhone(normalizePhone(phoneAuth.phone!)),
+        )
+        .then((secs) => setBackendWatchSeconds(Number(secs)))
+        .catch(() => {});
+    });
+  }, [phoneAuth.phone, userProfile?.id]);
+  const totalWatchSeconds = backendWatchSeconds;
 
   const { data: mySubmissions } = useMyPaymentSubmissions(phoneAuth.phone);
   const latestSubmission =
@@ -780,7 +798,7 @@ export default function DashboardPage() {
     try {
       await Promise.all([
         queryClient.invalidateQueries({
-          queryKey: ["referralTreeByCode", userProfile?.referralCode ?? null],
+          queryKey: ["referralTreeById", userProfile?.id?.toString() ?? null],
         }),
         queryClient.invalidateQueries({
           queryKey: [
@@ -887,6 +905,14 @@ export default function DashboardPage() {
             <Play className="w-3.5 h-3.5 mr-1.5" />
             Videos
           </TabsTrigger>
+          <TabsTrigger
+            value="mychannel"
+            className="flex-1 sm:flex-none font-ui text-sm data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+            data-ocid="dashboard.mychannel.tab"
+          >
+            <Tv className="w-3.5 h-3.5 mr-1.5" />
+            My Channel
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Videos Tab Content ────────────────────────────────────────── */}
@@ -896,6 +922,21 @@ export default function DashboardPage() {
           className="mt-4"
         >
           <DashboardVideosSection userId={userProfile?.id ?? null} />
+        </TabsContent>
+
+        {/* ── My Channel Tab Content ───────────────────────────────── */}
+        <TabsContent
+          value="mychannel"
+          data-ocid="dashboard.mychannel.panel"
+          className="mt-4"
+        >
+          {phoneAuth.phone ? (
+            <MyChannelTab phone={phoneAuth.phone} />
+          ) : (
+            <div className="text-center py-10 text-muted-foreground font-body">
+              Please log in to manage your channel.
+            </div>
+          )}
         </TabsContent>
 
         {/* ── Overview Tab Content ─────────────────────────────────────── */}
@@ -950,7 +991,7 @@ export default function DashboardPage() {
                         }`}
                       >
                         {latestSubmission.status === PaymentStatus.approved ? (
-                          <CheckCircle2 className="w-5 h-5 text-green-400" />
+                          <CheckCircle className="w-5 h-5 text-green-400" />
                         ) : latestSubmission.status ===
                           PaymentStatus.rejected ? (
                           <XCircle className="w-5 h-5 text-red-400" />

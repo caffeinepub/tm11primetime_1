@@ -1,4 +1,3 @@
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -8,140 +7,120 @@ import {
   AlertCircle,
   ArrowRight,
   Crown,
+  Gift,
   Loader2,
   Phone,
   Play,
   Shield,
   Star,
   TrendingUp,
+  Users,
+  Video,
+  Wallet,
 } from "lucide-react";
 import { motion } from "motion/react";
-import { useRef, useState } from "react";
-import type { backendInterface } from "../backend";
-import { createActorWithConfig } from "../config";
+import { useEffect, useState } from "react";
+import { getActorWithRetry, normalizePhone } from "../globalActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
-// Normalize phone: strip non-digits, remove leading country code 91 or 0
-function normalizePhone(raw: string): string {
-  let digits = raw.replace(/\D/g, "");
-  if (digits.length === 12 && digits.startsWith("91")) digits = digits.slice(2);
-  if (digits.length === 11 && digits.startsWith("0")) digits = digits.slice(1);
-  return digits;
-}
-
-// Generate all candidate phone formats the backend may have stored
-function phoneVariants(raw: string): string[] {
-  const digits10 = normalizePhone(raw);
-  return [
-    ...new Set([
-      digits10,
-      `91${digits10}`,
-      `+91${digits10}`,
-      `+${digits10}`,
-      raw.trim(),
-    ]),
-  ];
-}
-
 const LEVEL_EARNINGS = [
-  { level: 1, amount: "₹10" },
-  { level: 2, amount: "₹5" },
-  { level: 3, amount: "₹4" },
-  { level: 4, amount: "₹3" },
-  { level: 5, amount: "₹2" },
-  { level: 6, amount: "₹1" },
-  { level: 7, amount: "₹0.50" },
-  { level: "8-15", amount: "₹0.25" },
+  { level: "1", amount: "₹10" },
+  { level: "2", amount: "₹5" },
+  { level: "3", amount: "₹4" },
+  { level: "4", amount: "₹3" },
+  { level: "5", amount: "₹2" },
+  { level: "6", amount: "₹1" },
+  { level: "7", amount: "₹0.50" },
+  { level: "8–15", amount: "₹0.25" },
 ];
 
-const features = [
+const FEATURES = [
   {
-    icon: Crown,
+    icon: Gift,
     title: "₹150 Joining Bonus",
-    desc: "Instant credit to your wallet on membership activation",
+    desc: "Instant wallet credit when you join",
+    color: "text-green-400",
   },
   {
     icon: TrendingUp,
     title: "15-Level Earnings",
-    desc: "Earn on every referral up to 15 levels deep in your network",
+    desc: "Earn from your entire referral network",
+    color: "text-blue-400",
   },
   {
-    icon: Play,
-    title: "Premium Content",
-    desc: "Tutorials, Entertainment, Wellness, Devotional & more",
+    icon: Video,
+    title: "Premium Video Library",
+    desc: "Exclusive content for paid members",
+    color: "text-purple-400",
+  },
+  {
+    icon: Users,
+    title: "Matrix Network",
+    desc: "3x15 matrix, each slot earns you money",
+    color: "text-pink-400",
+  },
+  {
+    icon: Wallet,
+    title: "Instant Withdrawals",
+    desc: "Transfer earnings to your bank (min ₹500)",
+    color: "text-amber",
   },
   {
     icon: Shield,
-    title: "Secure Platform",
-    desc: "Built on Internet Computer for decentralized security",
+    title: "ICP Blockchain",
+    desc: "All data secured on Internet Computer",
+    color: "text-cyan-400",
   },
 ];
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
-  // Keep a cached anonymous actor so we don't recreate it every login attempt
-  const anonActorRef = useRef<backendInterface | null>(null);
-
   const [phone, setPhone] = useState("");
-  const [loginLoading, setLoginLoading] = useState(false);
-  const [loginError, setLoginError] = useState<string | null>(null);
+  const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
 
-  const getAnonActor = async (): Promise<backendInterface> => {
-    if (anonActorRef.current) return anonActorRef.current;
-    // Create a plain anonymous actor — no identity, no admin token init
-    const actor = await createActorWithConfig();
-    anonActorRef.current = actor;
-    return actor;
-  };
+  // Auto-login if returning user
+  useEffect(() => {
+    if (phoneAuth.isLoggedIn && phoneAuth.phone) {
+      navigate({ to: "/dashboard" });
+    }
+  }, [phoneAuth.isLoggedIn, phoneAuth.phone, navigate]);
 
   const handleLogin = async () => {
-    const trimmed = phone.trim();
-    if (!trimmed) {
-      setLoginError("Please enter your mobile number.");
+    const raw = phone.trim();
+    if (!raw) {
+      setErrorMsg("Please enter your mobile number.");
+      setStatus("error");
       return;
     }
-
+    const normalized = normalizePhone(raw);
+    if (normalized.length !== 10) {
+      setErrorMsg("Please enter a valid 10-digit mobile number.");
+      setStatus("error");
+      return;
+    }
+    setStatus("checking");
+    setErrorMsg("");
     try {
-      setLoginLoading(true);
-      setLoginError(null);
-
-      const actor = await getAnonActor();
-
-      // Try all phone number formats the backend may have stored
-      const variants = phoneVariants(trimmed);
-      let match: import("../backend.d").User | null = null;
-
-      for (const variant of variants) {
-        try {
-          match = await actor.getUserByPhone(variant);
-          if (match) break;
-        } catch {
-          // If one variant fails, continue trying others
+      const actor = await getActorWithRetry();
+      const user = await actor.getUserByPhone(normalized);
+      if (user) {
+        phoneAuth.login(user.phone, user.id, user.name);
+        if (user.isPaid) {
+          navigate({ to: "/dashboard" });
+        } else {
+          navigate({ to: "/register", search: { step: "payment" } });
         }
-      }
-
-      if (!match) {
-        // No user found with any variant → new user, go register
-        navigate({ to: "/register", search: {} });
-        return;
-      }
-
-      // Save session
-      phoneAuth.login(match.phone, match.id, match.name);
-
-      if (match.isPaid) {
-        navigate({ to: "/dashboard" });
       } else {
-        // Registered but not paid — go directly to payment step
-        navigate({ to: "/register", search: { step: "payment" } });
+        // New user — go to register
+        navigate({ to: "/register", search: { ref: undefined } });
       }
     } catch (err) {
       const msg =
-        err instanceof Error ? err.message : "Login failed. Please try again.";
-      setLoginError(msg);
-    } finally {
-      setLoginLoading(false);
+        err instanceof Error ? err.message : "Connection failed. Please retry.";
+      setErrorMsg(msg);
+      setStatus("error");
     }
   };
 
@@ -150,193 +129,176 @@ export default function LandingPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background overflow-x-hidden">
-      {/* Hero Section */}
-      <section className="relative min-h-screen flex flex-col">
-        {/* Background */}
-        <div
-          className="absolute inset-0 z-0"
-          style={{
-            backgroundImage: `url('/assets/generated/hero-banner.dim_1920x600.jpg')`,
-            backgroundSize: "cover",
-            backgroundPosition: "center top",
-          }}
-        />
-        <div className="absolute inset-0 z-0 bg-gradient-to-b from-background/50 via-background/70 to-background" />
-        <div className="absolute inset-0 z-0 bg-gradient-to-r from-background/60 via-transparent to-background/60" />
+    <div className="min-h-screen bg-background">
+      {/* Hero */}
+      <section className="relative overflow-hidden">
+        {/* Background gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-card via-background to-background" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,oklch(0.82_0.16_85/0.08)_0%,transparent_60%)]" />
 
-        {/* Header */}
-        <header className="relative z-10 flex items-center justify-between px-6 py-5 max-w-7xl mx-auto w-full">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center glow-gold animate-pulse-gold">
-              <Crown className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <span className="font-display font-black text-xl text-gradient-gold">
-              Tm11primeTime
-            </span>
-          </div>
-          <Button
-            onClick={() => navigate({ to: "/register", search: {} })}
-            variant="outline"
-            className="border-primary/60 text-primary hover:bg-primary hover:text-primary-foreground font-ui"
-            data-ocid="landing.register.button"
-          >
-            Join Now
-          </Button>
-        </header>
-
-        {/* Hero Content */}
-        <div className="relative z-10 flex-1 flex flex-col items-center justify-center text-center px-6 py-16">
+        <div className="relative max-w-5xl mx-auto px-4 pt-10 pb-16 sm:pt-16 sm:pb-24">
+          {/* App name */}
           <motion.div
-            initial={{ opacity: 0, y: 30 }}
+            initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6 }}
-            className="w-full max-w-2xl mx-auto"
+            transition={{ duration: 0.5 }}
+            className="flex items-center gap-3 mb-8"
           >
-            <div className="inline-flex items-center gap-2 bg-primary/20 border border-primary/30 rounded-full px-4 py-1.5 mb-6">
-              <Star className="w-4 h-4 text-primary fill-primary" />
-              <span className="text-primary text-sm font-ui font-medium">
-                India's Premium Referral Platform
-              </span>
+            <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/30 flex items-center justify-center glow-gold">
+              <Crown className="w-5 h-5 text-primary" />
             </div>
-
-            <h1 className="font-display font-black text-4xl md:text-6xl lg:text-7xl mb-4 leading-tight">
-              <span className="text-foreground">Earn While You</span>
-              <br />
-              <span className="text-gradient-gold">Watch & Share</span>
-            </h1>
-
-            <p className="text-muted-foreground text-lg md:text-xl max-w-2xl mx-auto mb-10 font-body leading-relaxed">
-              Join Tm11primeTime — get ₹150 joining bonus instantly, access
-              premium video content, and earn through 15 levels of referrals.
-            </p>
-
-            {/* Phone Login Card */}
-            <Card className="card-premium mx-auto max-w-sm mb-8">
-              <CardContent className="p-5 space-y-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <div className="w-8 h-8 rounded-lg bg-primary/15 flex items-center justify-center">
-                    <Phone className="w-4 h-4 text-primary" />
-                  </div>
-                  <span className="font-display font-bold text-base text-foreground">
-                    Login / Register
-                  </span>
-                </div>
-
-                {loginError && (
-                  <Alert
-                    variant="destructive"
-                    data-ocid="landing.login.error_state"
-                  >
-                    <AlertCircle className="w-4 h-4" />
-                    <AlertDescription className="font-body text-sm">
-                      {loginError}
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                <div className="space-y-1.5">
-                  <Label
-                    htmlFor="login-phone"
-                    className="font-ui text-sm text-foreground/80"
-                  >
-                    Mobile Number
-                  </Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary" />
-                    <Input
-                      id="login-phone"
-                      type="tel"
-                      value={phone}
-                      onChange={(e) => {
-                        setPhone(e.target.value);
-                        setLoginError(null);
-                      }}
-                      onKeyDown={handleKeyDown}
-                      placeholder="+91 98765 43210"
-                      className="pl-9 h-11 bg-input border-border font-body border-primary/40 focus:border-primary"
-                      autoComplete="tel"
-                      data-ocid="landing.phone.input"
-                    />
-                  </div>
-                </div>
-
-                <Button
-                  className="w-full bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-base glow-gold"
-                  onClick={handleLogin}
-                  disabled={loginLoading}
-                  data-ocid="landing.login.button"
-                >
-                  {loginLoading ? (
-                    <Loader2 className="mr-2 w-4 h-4 animate-spin" />
-                  ) : null}
-                  {loginLoading ? "Logging in..." : "Login / Register"}
-                </Button>
-
-                <p className="text-center text-xs text-muted-foreground font-body">
-                  New here? Enter your mobile number to register.
-                </p>
-              </CardContent>
-            </Card>
-
-            {/* Stats */}
-            <div className="flex flex-wrap justify-center gap-8">
-              {[
-                { label: "Joining Bonus", value: "₹150" },
-                { label: "Membership Fee", value: "₹118" },
-                { label: "Referral Levels", value: "15" },
-              ].map((stat) => (
-                <div key={stat.label} className="text-center">
-                  <div className="font-display font-black text-3xl text-gradient-gold">
-                    {stat.value}
-                  </div>
-                  <div className="text-muted-foreground text-sm font-ui mt-1">
-                    {stat.label}
-                  </div>
-                </div>
-              ))}
-            </div>
+            <span className="font-display text-2xl font-bold text-gradient-gold">
+              Tm11<span className="text-foreground/70">prime</span>Time
+            </span>
           </motion.div>
+
+          <div className="grid md:grid-cols-2 gap-12 items-center">
+            {/* Left: Tagline */}
+            <motion.div
+              initial={{ opacity: 0, x: -30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+            >
+              <h1 className="font-display text-4xl sm:text-5xl font-bold leading-tight mb-4">
+                Earn While You{" "}
+                <span className="text-gradient-gold">Connect &amp; Watch</span>
+              </h1>
+              <p className="text-muted-foreground text-lg mb-6 leading-relaxed">
+                Join Tm11primeTime — India's premier multi-level matrix platform
+                with a premium video library. Earn ₹150 joining bonus and build
+                your network across 15 levels.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Star className="w-4 h-4 text-primary" />
+                  <span>₹150 Joining Bonus</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Star className="w-4 h-4 text-primary" />
+                  <span>15-Level Matrix</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Star className="w-4 h-4 text-primary" />
+                  <span>Premium Videos</span>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Right: Login card */}
+            <motion.div
+              initial={{ opacity: 0, x: 30 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+            >
+              <Card className="bg-card border-border shadow-card">
+                <CardContent className="p-6">
+                  <h2 className="font-display text-xl font-semibold mb-1">
+                    Login / Register
+                  </h2>
+                  <p className="text-muted-foreground text-sm mb-5">
+                    Enter your mobile number to continue
+                  </p>
+
+                  <div className="space-y-4">
+                    <div className="space-y-1.5">
+                      <Label
+                        htmlFor="lp-phone"
+                        className="text-foreground/80 text-sm"
+                      >
+                        Mobile Number
+                      </Label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="lp-phone"
+                          name="phone"
+                          type="tel"
+                          inputMode="numeric"
+                          placeholder="10-digit mobile number"
+                          value={phone}
+                          onChange={(e) => {
+                            setPhone(e.target.value);
+                            setStatus("idle");
+                            setErrorMsg("");
+                          }}
+                          onKeyDown={handleKeyDown}
+                          disabled={status === "checking"}
+                          className="pl-10 bg-secondary border-border"
+                          data-ocid="login.input"
+                          autoComplete="tel"
+                        />
+                      </div>
+                    </div>
+
+                    {status === "error" && errorMsg && (
+                      <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        className="flex items-start gap-2 text-destructive text-sm"
+                        data-ocid="login.error_state"
+                      >
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{errorMsg}</span>
+                      </motion.div>
+                    )}
+
+                    <Button
+                      onClick={handleLogin}
+                      disabled={status === "checking"}
+                      className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-ui font-semibold"
+                      data-ocid="login.primary_button"
+                    >
+                      {status === "checking" ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Checking your account…
+                        </>
+                      ) : (
+                        <>
+                          Continue
+                          <ArrowRight className="w-4 h-4 ml-2" />
+                        </>
+                      )}
+                    </Button>
+
+                    <p className="text-center text-xs text-muted-foreground">
+                      New user? Enter your number and we'll guide you through
+                      registration.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          </div>
         </div>
       </section>
 
-      {/* Features Section */}
-      <section className="py-20 px-6 max-w-7xl mx-auto">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
+      {/* Features Grid */}
+      <section className="max-w-5xl mx-auto px-4 py-12">
+        <motion.h2
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
-          transition={{ duration: 0.5 }}
-          className="text-center mb-12"
+          className="font-display text-2xl font-bold text-center mb-8"
         >
-          <h2 className="font-display font-black text-3xl md:text-4xl text-foreground mb-3">
-            Why Join <span className="text-gradient-gold">Tm11primeTime?</span>
-          </h2>
-          <p className="text-muted-foreground font-body max-w-xl mx-auto">
-            A complete ecosystem for earning, learning, and entertainment.
-          </p>
-        </motion.div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-          {features.map((feat, i) => (
+          Why Join Tm11primeTime?
+        </motion.h2>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {FEATURES.map((f, i) => (
             <motion.div
-              key={feat.title}
+              key={f.title}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
-              transition={{ duration: 0.4, delay: i * 0.1 }}
+              transition={{ delay: i * 0.05 }}
             >
-              <Card className="card-premium h-full hover:border-primary/40 transition-all duration-300 hover:-translate-y-1">
-                <CardContent className="p-6">
-                  <div className="w-12 h-12 rounded-xl bg-primary/15 flex items-center justify-center mb-4">
-                    <feat.icon className="w-6 h-6 text-primary" />
-                  </div>
-                  <h3 className="font-display font-bold text-foreground mb-2">
-                    {feat.title}
+              <Card className="bg-card border-border h-full card-hover">
+                <CardContent className="p-5">
+                  <f.icon className={`w-7 h-7 mb-3 ${f.color}`} />
+                  <h3 className="font-ui font-semibold text-base mb-1">
+                    {f.title}
                   </h3>
-                  <p className="text-muted-foreground text-sm font-body leading-relaxed">
-                    {feat.desc}
-                  </p>
+                  <p className="text-muted-foreground text-sm">{f.desc}</p>
                 </CardContent>
               </Card>
             </motion.div>
@@ -344,91 +306,65 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* Level Earnings Section */}
-      <section className="py-20 px-6 bg-card/50">
-        <div className="max-w-4xl mx-auto">
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            whileInView={{ opacity: 1, y: 0 }}
-            viewport={{ once: true }}
-            className="text-center mb-12"
-          >
-            <h2 className="font-display font-black text-3xl md:text-4xl text-foreground mb-3">
-              Level <span className="text-gradient-gold">Earnings Plan</span>
-            </h2>
-            <p className="text-muted-foreground font-body">
-              Earn on every new member that joins under your referral network
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {LEVEL_EARNINGS.map((item, i) => (
-              <motion.div
-                key={String(item.level)}
-                initial={{ opacity: 0, scale: 0.9 }}
-                whileInView={{ opacity: 1, scale: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.3, delay: i * 0.05 }}
-              >
-                <div
-                  className={`rounded-xl p-4 text-center border transition-all duration-300 ${
-                    i === 0
-                      ? "bg-primary/20 border-primary/40 glow-gold"
-                      : "bg-card border-border hover:border-primary/30"
-                  }`}
-                >
-                  <div className="text-muted-foreground text-xs font-ui mb-1">
-                    Level {item.level}
-                  </div>
-                  <div
-                    className={`font-display font-black text-xl ${
-                      i === 0 ? "text-gradient-gold" : "text-foreground"
-                    }`}
-                  >
-                    {item.amount}
-                  </div>
-                  <div className="text-muted-foreground text-xs font-ui mt-1">
-                    per join
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA Section */}
-      <section className="py-20 px-6 text-center">
+      {/* Earnings Table */}
+      <section className="max-w-5xl mx-auto px-4 py-8 pb-16">
         <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          whileInView={{ opacity: 1, y: 0 }}
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
           viewport={{ once: true }}
         >
-          <h2 className="font-display font-black text-3xl md:text-4xl text-foreground mb-4">
-            Ready to Start <span className="text-gradient-gold">Earning?</span>
+          <h2 className="font-display text-2xl font-bold text-center mb-2">
+            Matrix Earnings Structure
           </h2>
-          <p className="text-muted-foreground font-body mb-8 max-w-lg mx-auto">
-            Pay ₹118 (₹100 + 18% GST), get ₹150 joining bonus, and start earning
-            through your referral network today.
+          <p className="text-center text-muted-foreground text-sm mb-8">
+            Earn on every join in your 15-level referral network
           </p>
-          <Button
-            size="lg"
-            onClick={() => navigate({ to: "/register", search: {} })}
-            className="bg-primary text-primary-foreground hover:opacity-90 font-display font-bold text-lg px-10 py-6 glow-gold"
-            data-ocid="landing.cta.primary_button"
-          >
-            Get Started Now
-            <ArrowRight className="ml-2 w-5 h-5" />
-          </Button>
+          <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+            {LEVEL_EARNINGS.map((e) => (
+              <div
+                key={e.level}
+                className="bg-card border border-border rounded-xl p-3 text-center"
+              >
+                <div className="text-xs text-muted-foreground mb-1 font-ui">
+                  Level {e.level}
+                </div>
+                <div className="font-display font-bold text-primary text-sm">
+                  {e.amount}
+                </div>
+              </div>
+            ))}
+          </div>
         </motion.div>
       </section>
 
+      {/* CTA */}
+      <section className="bg-card border-t border-border">
+        <div className="max-w-5xl mx-auto px-4 py-12 text-center">
+          <Play className="w-10 h-10 text-primary mx-auto mb-4" />
+          <h2 className="font-display text-2xl font-bold mb-3">
+            Ready to Start Earning?
+          </h2>
+          <p className="text-muted-foreground mb-6">
+            Join thousands of members and start earning from your network today.
+          </p>
+          <Button
+            onClick={() => navigate({ to: "/register" })}
+            size="lg"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 font-ui font-semibold px-8"
+            data-ocid="landing.primary_button"
+          >
+            Join Now — ₹118 only
+            <ArrowRight className="w-4 h-4 ml-2" />
+          </Button>
+        </div>
+      </section>
+
       {/* Footer */}
-      <footer className="border-t border-border py-8 px-6 text-center">
-        <p className="text-muted-foreground text-sm font-body">
-          © {new Date().getFullYear()} Tm11primeTime. Built with ❤️ using{" "}
+      <footer className="border-t border-border py-6">
+        <p className="text-center text-xs text-muted-foreground">
+          © {new Date().getFullYear()} Tm11primeTime. Built with love using{" "}
           <a
-            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(window.location.hostname)}`}
+            href={`https://caffeine.ai?utm_source=caffeine-footer&utm_medium=referral&utm_content=${encodeURIComponent(typeof window !== "undefined" ? window.location.hostname : "")}`}
             target="_blank"
             rel="noopener noreferrer"
             className="text-primary hover:underline"

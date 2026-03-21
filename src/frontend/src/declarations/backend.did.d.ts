@@ -10,6 +10,12 @@ import type { ActorMethod } from '@icp-sdk/core/agent';
 import type { IDL } from '@icp-sdk/core/candid';
 import type { Principal } from '@icp-sdk/core/principal';
 
+export interface ChannelLink {
+  'id' : bigint,
+  'url' : string,
+  'name' : string,
+  'createdAt' : bigint,
+}
 export type PaymentStatus = { 'pending' : null } |
   { 'approved' : null } |
   { 'rejected' : null };
@@ -37,14 +43,6 @@ export interface ReferralNode {
   'phone' : string,
   'referredByName' : string,
 }
-export interface Transaction {
-  'id' : bigint,
-  'userId' : bigint,
-  'note' : string,
-  'timestamp' : bigint,
-  'txType' : string,
-  'amount' : bigint,
-}
 export interface User {
   'id' : bigint,
   'referralCode' : string,
@@ -58,6 +56,15 @@ export interface User {
   'phone' : string,
   'walletBalance' : bigint,
 }
+export interface UserChannel {
+  'id' : bigint,
+  'thumbnailUrl' : string,
+  'name' : string,
+  'createdAt' : bigint,
+  'ownerPhone' : string,
+  'description' : string,
+  'bannerUrl' : string,
+}
 export interface UserProfile {
   'userId' : bigint,
   'name' : string,
@@ -67,123 +74,110 @@ export interface UserProfile {
 export type UserRole = { 'admin' : null } |
   { 'user' : null } |
   { 'guest' : null };
+export interface UserVideo {
+  'id' : bigint,
+  'url' : string,
+  'status' : string,
+  'title' : string,
+  'thumbnailUrl' : string,
+  'channelId' : bigint,
+  'createdAt' : bigint,
+  'ownerPhone' : string,
+  'description' : string,
+  'category' : string,
+}
 export interface Video {
   'id' : bigint,
   'url' : string,
+  'channelUrl' : string,
   'title' : string,
   'duration' : bigint,
+  'thumbnailUrl' : string,
   'createdAt' : bigint,
   'description' : string,
   'category' : string,
-  'channelUrl' : string,
-  'thumbnailUrl' : string,
-}
-export interface WatchRecord {
-  'userId' : bigint,
-  'completed' : boolean,
-  'watchedSeconds' : bigint,
-  'subscribed' : boolean,
-  'videoId' : bigint,
 }
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
-  'addVideo' : ActorMethod<[string, string, string, string, bigint], undefined>,
+  'addChannelWithPassword' : ActorMethod<[string, string, string], bigint>,
   'addVideoWithPassword' : ActorMethod<
     [string, string, string, string, string, bigint, string, string],
-    undefined
+    bigint
   >,
   'assignCallerUserRole' : ActorMethod<[Principal, UserRole], undefined>,
-  'claimFirstAdmin' : ActorMethod<[], undefined>,
+  'createChannelWithPhone' : ActorMethod<
+    [string, string, string, string, string],
+    bigint
+  >,
+  'deleteChannelVideoWithPhone' : ActorMethod<[string, bigint], undefined>,
+  'deleteChannelWithPassword' : ActorMethod<[string, bigint], undefined>,
+  'deleteChannelWithPasswordById' : ActorMethod<[string, bigint], undefined>,
   'deletePaymentSubmissionWithPassword' : ActorMethod<
     [string, bigint],
     undefined
   >,
-  'deleteUser' : ActorMethod<[bigint], undefined>,
+  'deleteUserVideoWithPassword' : ActorMethod<[string, bigint], undefined>,
   'deleteUserWithPassword' : ActorMethod<[string, bigint], undefined>,
-  'deleteVideo' : ActorMethod<[bigint], undefined>,
   'deleteVideoWithPassword' : ActorMethod<[string, bigint], undefined>,
-  'updateVideoChannelInfoWithPassword' : ActorMethod<[string, bigint, string, string], undefined>,
-  'forceSetAdmin' : ActorMethod<[string], string>,
-  'getAllPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
+  'editUserWithPassword' : ActorMethod<
+    [string, bigint, string, string, string],
+    undefined
+  >,
+  'getAllChannelsListWithPassword' : ActorMethod<[string], Array<ChannelLink>>,
+  'getAllChannelsPublic' : ActorMethod<[], Array<UserChannel>>,
+  'getAllChannelsWithPassword' : ActorMethod<[string], Array<UserChannel>>,
   'getAllPaymentSubmissionsWithPassword' : ActorMethod<
     [string],
     Array<PaymentSubmission>
   >,
-  'getAllReferralTreesWithPassword' : ActorMethod<
+  'getAllUserVideosWithPassword' : ActorMethod<[string], Array<UserVideo>>,
+  'getAllUsersWatchTimeWithPassword' : ActorMethod<
     [string],
     Array<
       {
-        'totalNetwork' : bigint,
-        'directReferrals' : bigint,
-        'referralCode' : string,
+        'totalSeconds' : bigint,
         'userId' : bigint,
         'name' : string,
-        'isPaid' : boolean,
         'phone' : string,
       }
     >
   >,
-  'getAllUsers' : ActorMethod<[], Array<User>>,
   'getAllUsersWithPassword' : ActorMethod<[string], Array<User>>,
   'getAllVideos' : ActorMethod<[], Array<Video>>,
-  'getAllVideosPublic' : ActorMethod<[], Array<Video>>,
-  'getVideosByCategoryPublic' : ActorMethod<[string], Array<Video>>,
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
-  'getMyPaymentSubmissions' : ActorMethod<[], Array<PaymentSubmission>>,
-  'getMyProfile' : ActorMethod<[bigint], User>,
-  'getMyWatchHistory' : ActorMethod<[], Array<WatchRecord>>,
-  'getReferralTree' : ActorMethod<[bigint], ReferralNode>,
-  'getReferralTreeByCode' : ActorMethod<
-    [string],
-    {
-      'id' : bigint,
-      'referralCode' : string,
-      'name' : string,
-      'children' : Array<ReferralNode>,
-      'phone' : string,
-      'referredByName' : string,
-    }
-  >,
-  'getReferralTreeByPhoneWithPassword' : ActorMethod<
-    [string, string],
-    [] | [
-      {
-        'id' : bigint,
-        'referralCode' : string,
-        'name' : string,
-        'children' : Array<ReferralNode>,
-        'phone' : string,
-        'referredByName' : string,
-      }
-    ]
-  >,
-  'getTransactions' : ActorMethod<[], Array<Transaction>>,
+  'getChannelVideos' : ActorMethod<[bigint], Array<UserVideo>>,
+  'getMyChannelByPhone' : ActorMethod<[string], [] | [UserChannel]>,
+  'getReferralTreeWithPassword' : ActorMethod<[string, bigint], ReferralNode>,
   'getUserByPhone' : ActorMethod<[string], [] | [User]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
+  'getUserWatchTime' : ActorMethod<[string], bigint>,
+  'getUserWatchTimeByPhone' : ActorMethod<[string], bigint>,
   'getVideosByCategory' : ActorMethod<[string], Array<Video>>,
-  'isAdminAssigned' : ActorMethod<[], boolean>,
+  'initializeAdmin' : ActorMethod<[string], undefined>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
-  'recordWatchProgress' : ActorMethod<[bigint, bigint, boolean], undefined>,
-  'register' : ActorMethod<[string, string, string, string], string>,
+  'recordWatch' : ActorMethod<[bigint, bigint, boolean, boolean], undefined>,
+  'recordWatchByPhone' : ActorMethod<
+    [string, bigint, bigint, boolean, boolean],
+    undefined
+  >,
+  'registerUser' : ActorMethod<[string, string, string, string], bigint>,
+  'rejectPaymentSubmissionWithPassword' : ActorMethod<
+    [string, bigint],
+    undefined
+  >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
   'submitPaymentProof' : ActorMethod<[PaymentSubmissionInput], bigint>,
-  'updateUser' : ActorMethod<
-    [bigint, string, string, string, boolean],
+  'updateChannelWithPhone' : ActorMethod<
+    [string, bigint, string, string, string, string],
     undefined
   >,
-  'updateUserStatus' : ActorMethod<[bigint, boolean], undefined>,
-  'updateUserStatusWithPassword' : ActorMethod<
-    [string, bigint, boolean],
-    undefined
+  'uploadVideoToChannelWithPhone' : ActorMethod<
+    [string, bigint, string, string, string, string, string],
+    bigint
   >,
-  'updateUserWithPassword' : ActorMethod<
-    [string, bigint, string, string, string, boolean],
-    undefined
-  >,
-  'verifyPaymentSubmission' : ActorMethod<[bigint, string], undefined>,
   'verifyPaymentSubmissionWithPassword' : ActorMethod<
-    [string, bigint, string],
+    [string, bigint],
     undefined
   >,
 }

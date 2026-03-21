@@ -92,21 +92,13 @@ export class ExternalBlob {
 export interface Video {
     id: bigint;
     url: string;
+    channelUrl: string;
     title: string;
     duration: bigint;
+    thumbnailUrl: string;
     createdAt: bigint;
     description: string;
     category: string;
-    channelUrl: string;
-    thumbnailUrl: string;
-}
-export interface ReferralNode {
-    id: bigint;
-    referralCode: string;
-    name: string;
-    children: Array<ReferralNode>;
-    phone: string;
-    referredByName: string;
 }
 export interface PaymentSubmissionInput {
     utr: string;
@@ -137,12 +129,32 @@ export interface User {
     phone: string;
     walletBalance: bigint;
 }
-export interface WatchRecord {
-    userId: bigint;
-    completed: boolean;
-    watchedSeconds: bigint;
-    subscribed: boolean;
-    videoId: bigint;
+export interface UserChannel {
+    id: bigint;
+    thumbnailUrl: string;
+    name: string;
+    createdAt: bigint;
+    ownerPhone: string;
+    description: string;
+    bannerUrl: string;
+}
+export interface UserVideo {
+    id: bigint;
+    url: string;
+    status: string;
+    title: string;
+    thumbnailUrl: string;
+    channelId: bigint;
+    createdAt: bigint;
+    ownerPhone: string;
+    description: string;
+    category: string;
+}
+export interface ChannelLink {
+    id: bigint;
+    url: string;
+    name: string;
+    createdAt: bigint;
 }
 export interface UserProfile {
     userId: bigint;
@@ -150,13 +162,13 @@ export interface UserProfile {
     email: string;
     phone: string;
 }
-export interface Transaction {
+export interface ReferralNode {
     id: bigint;
-    userId: bigint;
-    note: string;
-    timestamp: bigint;
-    txType: string;
-    amount: bigint;
+    referralCode: string;
+    name: string;
+    children: Array<ReferralNode>;
+    phone: string;
+    referredByName: string;
 }
 export enum PaymentStatus {
     pending = "pending",
@@ -170,73 +182,54 @@ export enum UserRole {
 }
 export interface backendInterface {
     _initializeAccessControlWithSecret(userSecret: string): Promise<void>;
-    addVideo(title: string, category: string, url: string, description: string, duration: bigint): Promise<void>;
-    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
+    addChannelWithPassword(password: string, name: string, url: string): Promise<bigint>;
+    addVideoWithPassword(password: string, title: string, category: string, url: string, description: string, duration: bigint, channelUrl: string, thumbnailUrl: string): Promise<bigint>;
     assignCallerUserRole(user: Principal, role: UserRole): Promise<void>;
-    claimFirstAdmin(): Promise<void>;
+    createChannelWithPhone(phone: string, name: string, description: string, thumbnailUrl: string, bannerUrl: string): Promise<bigint>;
+    deleteChannelVideoWithPhone(phone: string, videoId: bigint): Promise<void>;
+    deleteChannelWithPassword(password: string, channelId: bigint): Promise<void>;
+    deleteChannelWithPasswordById(password: string, channelId: bigint): Promise<void>;
     deletePaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
-    deleteUser(userId: bigint): Promise<void>;
+    deleteUserVideoWithPassword(password: string, videoId: bigint): Promise<void>;
     deleteUserWithPassword(password: string, userId: bigint): Promise<void>;
-    deleteVideo(videoId: bigint): Promise<void>;
     deleteVideoWithPassword(password: string, videoId: bigint): Promise<void>;
-    updateVideoChannelInfoWithPassword(password: string, videoId: bigint, channelUrl: string, thumbnailUrl: string): Promise<void>;
-    forceSetAdmin(principalText: string): Promise<string>;
-    getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
+    editUserWithPassword(password: string, userId: bigint, name: string, email: string, phone: string): Promise<void>;
+    getAllChannelsListWithPassword(password: string): Promise<Array<ChannelLink>>;
+    getAllChannelsPublic(): Promise<Array<UserChannel>>;
+    getAllChannelsWithPassword(password: string): Promise<Array<UserChannel>>;
     getAllPaymentSubmissionsWithPassword(password: string): Promise<Array<PaymentSubmission>>;
-    getAllReferralTreesWithPassword(password: string): Promise<Array<{
-        totalNetwork: bigint;
-        directReferrals: bigint;
-        referralCode: string;
+    getAllUserVideosWithPassword(password: string): Promise<Array<UserVideo>>;
+    getAllUsersWatchTimeWithPassword(password: string): Promise<Array<{
+        totalSeconds: bigint;
         userId: bigint;
         name: string;
-        isPaid: boolean;
         phone: string;
     }>>;
-    getAllUsers(): Promise<Array<User>>;
     getAllUsersWithPassword(password: string): Promise<Array<User>>;
     getAllVideos(): Promise<Array<Video>>;
-    getAllVideosPublic(): Promise<Array<Video>>;
-    getVideosByCategoryPublic(category: string): Promise<Array<Video>>;
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
-    getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>>;
-    getMyProfile(userId: bigint): Promise<User>;
-    getMyWatchHistory(): Promise<Array<WatchRecord>>;
-    getReferralTree(userId: bigint): Promise<ReferralNode>;
-    getReferralTreeByCode(referralCode: string): Promise<{
-        id: bigint;
-        referralCode: string;
-        name: string;
-        children: Array<ReferralNode>;
-        phone: string;
-        referredByName: string;
-    }>;
-    getReferralTreeByPhoneWithPassword(password: string, phone: string): Promise<{
-        id: bigint;
-        referralCode: string;
-        name: string;
-        children: Array<ReferralNode>;
-        phone: string;
-        referredByName: string;
-    } | null>;
-    getTransactions(): Promise<Array<Transaction>>;
+    getChannelVideos(channelId: bigint): Promise<Array<UserVideo>>;
+    getMyChannelByPhone(phone: string): Promise<UserChannel | null>;
+    getReferralTreeWithPassword(password: string, userId: bigint): Promise<ReferralNode>;
     getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
+    getUserWatchTime(phone: string): Promise<bigint>;
+    getUserWatchTimeByPhone(phone: string): Promise<bigint>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
-    isAdminAssigned(): Promise<boolean>;
+    initializeAdmin(userProvidedToken: string): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
-    recordWatchProgress(videoId: bigint, watchedSeconds: bigint, subscribed: boolean): Promise<void>;
-    register(name: string, email: string, phone: string, referredBy: string): Promise<string>;
+    recordWatch(videoId: bigint, watchedSeconds: bigint, completed: boolean, subscribed: boolean): Promise<void>;
+    recordWatchByPhone(phone: string, videoId: bigint, watchedSeconds: bigint, completed: boolean, subscribed: boolean): Promise<void>;
+    registerUser(name: string, email: string, phone: string, referralCode: string): Promise<bigint>;
+    rejectPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
-    updateUser(userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
-    updateUserStatus(userId: bigint, isActive: boolean): Promise<void>;
-    updateUserStatusWithPassword(password: string, userId: bigint, isActive: boolean): Promise<void>;
-    updateUserWithPassword(password: string, userId: bigint, name: string, email: string, phone: string, isActive: boolean): Promise<void>;
-    verifyPaymentSubmission(submissionId: bigint, action: string): Promise<void>;
-    verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint, action: string): Promise<void>;
+    updateChannelWithPhone(phone: string, channelId: bigint, name: string, description: string, thumbnailUrl: string, bannerUrl: string): Promise<void>;
+    uploadVideoToChannelWithPhone(phone: string, channelId: bigint, title: string, url: string, description: string, thumbnailUrl: string, category: string): Promise<bigint>;
+    verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
 }
-import type { PaymentStatus as _PaymentStatus, PaymentSubmission as _PaymentSubmission, ReferralNode as _ReferralNode, User as _User, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
+import type { PaymentStatus as _PaymentStatus, PaymentSubmission as _PaymentSubmission, ReferralNode as _ReferralNode, User as _User, UserChannel as _UserChannel, UserProfile as _UserProfile, UserRole as _UserRole } from "./declarations/backend.did.d.ts";
 export class Backend implements backendInterface {
     constructor(private actor: ActorSubclass<_SERVICE>, private _uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, private _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, private processError?: (error: unknown) => never){}
     async _initializeAccessControlWithSecret(arg0: string): Promise<void> {
@@ -253,21 +246,21 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async addVideo(arg0: string, arg1: string, arg2: string, arg3: string, arg4: bigint): Promise<void> {
+    async addChannelWithPassword(arg0: string, arg1: string, arg2: string): Promise<bigint> {
         if (this.processError) {
             try {
-                const result = await this.actor.addVideo(arg0, arg1, arg2, arg3, arg4);
+                const result = await this.actor.addChannelWithPassword(arg0, arg1, arg2);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.addVideo(arg0, arg1, arg2, arg3, arg4);
+            const result = await this.actor.addChannelWithPassword(arg0, arg1, arg2);
             return result;
         }
     }
-    async addVideoWithPassword(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: bigint, arg6: string, arg7: string): Promise<void> {
+    async addVideoWithPassword(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string, arg5: bigint, arg6: string, arg7: string): Promise<bigint> {
         if (this.processError) {
             try {
                 const result = await this.actor.addVideoWithPassword(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
@@ -295,17 +288,59 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async claimFirstAdmin(): Promise<void> {
+    async createChannelWithPhone(arg0: string, arg1: string, arg2: string, arg3: string, arg4: string): Promise<bigint> {
         if (this.processError) {
             try {
-                const result = await this.actor.claimFirstAdmin();
+                const result = await this.actor.createChannelWithPhone(arg0, arg1, arg2, arg3, arg4);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.claimFirstAdmin();
+            const result = await this.actor.createChannelWithPhone(arg0, arg1, arg2, arg3, arg4);
+            return result;
+        }
+    }
+    async deleteChannelVideoWithPhone(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteChannelVideoWithPhone(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteChannelVideoWithPhone(arg0, arg1);
+            return result;
+        }
+    }
+    async deleteChannelWithPassword(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteChannelWithPassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteChannelWithPassword(arg0, arg1);
+            return result;
+        }
+    }
+    async deleteChannelWithPasswordById(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.deleteChannelWithPasswordById(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.deleteChannelWithPasswordById(arg0, arg1);
             return result;
         }
     }
@@ -323,17 +358,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async deleteUser(arg0: bigint): Promise<void> {
+    async deleteUserVideoWithPassword(arg0: string, arg1: bigint): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.deleteUser(arg0);
+                const result = await this.actor.deleteUserVideoWithPassword(arg0, arg1);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.deleteUser(arg0);
+            const result = await this.actor.deleteUserVideoWithPassword(arg0, arg1);
             return result;
         }
     }
@@ -351,20 +386,6 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async deleteVideo(arg0: bigint): Promise<void> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.deleteVideo(arg0);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.deleteVideo(arg0);
-            return result;
-        }
-    }
     async deleteVideoWithPassword(arg0: string, arg1: bigint): Promise<void> {
         if (this.processError) {
             try {
@@ -379,46 +400,60 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateVideoChannelInfoWithPassword(arg0: string, arg1: bigint, arg2: string, arg3: string): Promise<void> {
+    async editUserWithPassword(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateVideoChannelInfoWithPassword(arg0, arg1, arg2, arg3);
+                const result = await this.actor.editUserWithPassword(arg0, arg1, arg2, arg3, arg4);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateVideoChannelInfoWithPassword(arg0, arg1, arg2, arg3);
+            const result = await this.actor.editUserWithPassword(arg0, arg1, arg2, arg3, arg4);
             return result;
         }
     }
-    async forceSetAdmin(arg0: string): Promise<string> {
+    async getAllChannelsListWithPassword(arg0: string): Promise<Array<ChannelLink>> {
         if (this.processError) {
             try {
-                const result = await this.actor.forceSetAdmin(arg0);
+                const result = await this.actor.getAllChannelsListWithPassword(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.forceSetAdmin(arg0);
+            const result = await this.actor.getAllChannelsListWithPassword(arg0);
             return result;
         }
     }
-    async getAllPaymentSubmissions(): Promise<Array<PaymentSubmission>> {
+    async getAllChannelsPublic(): Promise<Array<UserChannel>> {
         if (this.processError) {
             try {
-                const result = await this.actor.getAllPaymentSubmissions();
-                return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
+                const result = await this.actor.getAllChannelsPublic();
+                return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getAllPaymentSubmissions();
-            return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
+            const result = await this.actor.getAllChannelsPublic();
+            return result;
+        }
+    }
+    async getAllChannelsWithPassword(arg0: string): Promise<Array<UserChannel>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllChannelsWithPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllChannelsWithPassword(arg0);
+            return result;
         }
     }
     async getAllPaymentSubmissionsWithPassword(arg0: string): Promise<Array<PaymentSubmission>> {
@@ -435,39 +470,36 @@ export class Backend implements backendInterface {
             return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getAllReferralTreesWithPassword(arg0: string): Promise<Array<{
-        totalNetwork: bigint;
-        directReferrals: bigint;
-        referralCode: string;
+    async getAllUserVideosWithPassword(arg0: string): Promise<Array<UserVideo>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getAllUserVideosWithPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getAllUserVideosWithPassword(arg0);
+            return result;
+        }
+    }
+    async getAllUsersWatchTimeWithPassword(arg0: string): Promise<Array<{
+        totalSeconds: bigint;
         userId: bigint;
         name: string;
-        isPaid: boolean;
         phone: string;
     }>> {
         if (this.processError) {
             try {
-                const result = await this.actor.getAllReferralTreesWithPassword(arg0);
+                const result = await this.actor.getAllUsersWatchTimeWithPassword(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getAllReferralTreesWithPassword(arg0);
-            return result;
-        }
-    }
-    async getAllUsers(): Promise<Array<User>> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getAllUsers();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getAllUsers();
+            const result = await this.actor.getAllUsersWatchTimeWithPassword(arg0);
             return result;
         }
     }
@@ -499,34 +531,6 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async getAllVideosPublic(): Promise<Array<Video>> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getAllVideosPublic();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getAllVideosPublic();
-            return result;
-        }
-    }
-    async getVideosByCategoryPublic(arg0: string): Promise<Array<Video>> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getVideosByCategoryPublic(arg0);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getVideosByCategoryPublic(arg0);
-            return result;
-        }
-    }
     async getCallerUserProfile(): Promise<UserProfile | null> {
         if (this.processError) {
             try {
@@ -555,116 +559,46 @@ export class Backend implements backendInterface {
             return from_candid_UserRole_n9(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getMyPaymentSubmissions(): Promise<Array<PaymentSubmission>> {
+    async getChannelVideos(arg0: bigint): Promise<Array<UserVideo>> {
         if (this.processError) {
             try {
-                const result = await this.actor.getMyPaymentSubmissions();
-                return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getMyPaymentSubmissions();
-            return from_candid_vec_n3(this._uploadFile, this._downloadFile, result);
-        }
-    }
-    async getMyProfile(arg0: bigint): Promise<User> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getMyProfile(arg0);
+                const result = await this.actor.getChannelVideos(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getMyProfile(arg0);
+            const result = await this.actor.getChannelVideos(arg0);
             return result;
         }
     }
-    async getMyWatchHistory(): Promise<Array<WatchRecord>> {
+    async getMyChannelByPhone(arg0: string): Promise<UserChannel | null> {
         if (this.processError) {
             try {
-                const result = await this.actor.getMyWatchHistory();
-                return result;
+                const result = await this.actor.getMyChannelByPhone(arg0);
+                return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getMyWatchHistory();
-            return result;
+            const result = await this.actor.getMyChannelByPhone(arg0);
+            return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
         }
     }
-    async getReferralTree(arg0: bigint): Promise<ReferralNode> {
+    async getReferralTreeWithPassword(arg0: string, arg1: bigint): Promise<ReferralNode> {
         if (this.processError) {
             try {
-                const result = await this.actor.getReferralTree(arg0);
-                return from_candid_ReferralNode_n11(this._uploadFile, this._downloadFile, result);
+                const result = await this.actor.getReferralTreeWithPassword(arg0, arg1);
+                return from_candid_ReferralNode_n12(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.getReferralTree(arg0);
-            return from_candid_ReferralNode_n11(this._uploadFile, this._downloadFile, result);
-        }
-    }
-    async getReferralTreeByCode(arg0: string): Promise<{
-        id: bigint;
-        referralCode: string;
-        name: string;
-        children: Array<ReferralNode>;
-        phone: string;
-        referredByName: string;
-    }> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getReferralTreeByCode(arg0);
-                return from_candid_record_n12(this._uploadFile, this._downloadFile, result);
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getReferralTreeByCode(arg0);
-            return from_candid_record_n12(this._uploadFile, this._downloadFile, result);
-        }
-    }
-    async getReferralTreeByPhoneWithPassword(arg0: string, arg1: string): Promise<{
-        id: bigint;
-        referralCode: string;
-        name: string;
-        children: Array<ReferralNode>;
-        phone: string;
-        referredByName: string;
-    } | null> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getReferralTreeByPhoneWithPassword(arg0, arg1);
-                return from_candid_opt_n14(this._uploadFile, this._downloadFile, result);
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getReferralTreeByPhoneWithPassword(arg0, arg1);
-            return from_candid_opt_n14(this._uploadFile, this._downloadFile, result);
-        }
-    }
-    async getTransactions(): Promise<Array<Transaction>> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.getTransactions();
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.getTransactions();
-            return result;
+            const result = await this.actor.getReferralTreeWithPassword(arg0, arg1);
+            return from_candid_ReferralNode_n12(this._uploadFile, this._downloadFile, result);
         }
     }
     async getUserByPhone(arg0: string): Promise<User | null> {
@@ -695,6 +629,34 @@ export class Backend implements backendInterface {
             return from_candid_opt_n8(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getUserWatchTime(arg0: string): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserWatchTime(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserWatchTime(arg0);
+            return result;
+        }
+    }
+    async getUserWatchTimeByPhone(arg0: string): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getUserWatchTimeByPhone(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getUserWatchTimeByPhone(arg0);
+            return result;
+        }
+    }
     async getVideosByCategory(arg0: string): Promise<Array<Video>> {
         if (this.processError) {
             try {
@@ -709,17 +671,17 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async isAdminAssigned(): Promise<boolean> {
+    async initializeAdmin(arg0: string): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.isAdminAssigned();
+                const result = await this.actor.initializeAdmin(arg0);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.isAdminAssigned();
+            const result = await this.actor.initializeAdmin(arg0);
             return result;
         }
     }
@@ -737,31 +699,59 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async recordWatchProgress(arg0: bigint, arg1: bigint, arg2: boolean): Promise<void> {
+    async recordWatch(arg0: bigint, arg1: bigint, arg2: boolean, arg3: boolean): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.recordWatchProgress(arg0, arg1, arg2);
+                const result = await this.actor.recordWatch(arg0, arg1, arg2, arg3);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.recordWatchProgress(arg0, arg1, arg2);
+            const result = await this.actor.recordWatch(arg0, arg1, arg2, arg3);
             return result;
         }
     }
-    async register(arg0: string, arg1: string, arg2: string, arg3: string): Promise<string> {
+    async recordWatchByPhone(arg0: string, arg1: bigint, arg2: bigint, arg3: boolean, arg4: boolean): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.register(arg0, arg1, arg2, arg3);
+                const result = await this.actor.recordWatchByPhone(arg0, arg1, arg2, arg3, arg4);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.register(arg0, arg1, arg2, arg3);
+            const result = await this.actor.recordWatchByPhone(arg0, arg1, arg2, arg3, arg4);
+            return result;
+        }
+    }
+    async registerUser(arg0: string, arg1: string, arg2: string, arg3: string): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.registerUser(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.registerUser(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
+    async rejectPaymentSubmissionWithPassword(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.rejectPaymentSubmissionWithPassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.rejectPaymentSubmissionWithPassword(arg0, arg1);
             return result;
         }
     }
@@ -793,87 +783,45 @@ export class Backend implements backendInterface {
             return result;
         }
     }
-    async updateUser(arg0: bigint, arg1: string, arg2: string, arg3: string, arg4: boolean): Promise<void> {
+    async updateChannelWithPhone(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: string): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateUser(arg0, arg1, arg2, arg3, arg4);
+                const result = await this.actor.updateChannelWithPhone(arg0, arg1, arg2, arg3, arg4, arg5);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateUser(arg0, arg1, arg2, arg3, arg4);
+            const result = await this.actor.updateChannelWithPhone(arg0, arg1, arg2, arg3, arg4, arg5);
             return result;
         }
     }
-    async updateUserStatus(arg0: bigint, arg1: boolean): Promise<void> {
+    async uploadVideoToChannelWithPhone(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: string, arg6: string): Promise<bigint> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateUserStatus(arg0, arg1);
+                const result = await this.actor.uploadVideoToChannelWithPhone(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateUserStatus(arg0, arg1);
+            const result = await this.actor.uploadVideoToChannelWithPhone(arg0, arg1, arg2, arg3, arg4, arg5, arg6);
             return result;
         }
     }
-    async updateUserStatusWithPassword(arg0: string, arg1: bigint, arg2: boolean): Promise<void> {
+    async verifyPaymentSubmissionWithPassword(arg0: string, arg1: bigint): Promise<void> {
         if (this.processError) {
             try {
-                const result = await this.actor.updateUserStatusWithPassword(arg0, arg1, arg2);
+                const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1);
                 return result;
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
-            const result = await this.actor.updateUserStatusWithPassword(arg0, arg1, arg2);
-            return result;
-        }
-    }
-    async updateUserWithPassword(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: boolean): Promise<void> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.updateUserWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.updateUserWithPassword(arg0, arg1, arg2, arg3, arg4, arg5);
-            return result;
-        }
-    }
-    async verifyPaymentSubmission(arg0: bigint, arg1: string): Promise<void> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.verifyPaymentSubmission(arg0, arg1);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.verifyPaymentSubmission(arg0, arg1);
-            return result;
-        }
-    }
-    async verifyPaymentSubmissionWithPassword(arg0: string, arg1: bigint, arg2: string): Promise<void> {
-        if (this.processError) {
-            try {
-                const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1, arg2);
-                return result;
-            } catch (e) {
-                this.processError(e);
-                throw new Error("unreachable");
-            }
-        } else {
-            const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1, arg2);
+            const result = await this.actor.verifyPaymentSubmissionWithPassword(arg0, arg1);
             return result;
         }
     }
@@ -884,28 +832,14 @@ function from_candid_PaymentStatus_n6(_uploadFile: (file: ExternalBlob) => Promi
 function from_candid_PaymentSubmission_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PaymentSubmission): PaymentSubmission {
     return from_candid_record_n5(_uploadFile, _downloadFile, value);
 }
-function from_candid_ReferralNode_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ReferralNode): ReferralNode {
-    return from_candid_record_n12(_uploadFile, _downloadFile, value);
+function from_candid_ReferralNode_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ReferralNode): ReferralNode {
+    return from_candid_record_n13(_uploadFile, _downloadFile, value);
 }
 function from_candid_UserRole_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n10(_uploadFile, _downloadFile, value);
 }
-function from_candid_opt_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [{
-        id: bigint;
-        referralCode: string;
-        name: string;
-        children: Array<_ReferralNode>;
-        phone: string;
-        referredByName: string;
-    }]): {
-    id: bigint;
-    referralCode: string;
-    name: string;
-    children: Array<ReferralNode>;
-    phone: string;
-    referredByName: string;
-} | null {
-    return value.length === 0 ? null : from_candid_record_n12(_uploadFile, _downloadFile, value[0]);
+function from_candid_opt_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserChannel]): UserChannel | null {
+    return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_User]): User | null {
     return value.length === 0 ? null : value[0];
@@ -913,7 +847,7 @@ function from_candid_opt_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8A
 function from_candid_opt_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: bigint;
     referralCode: string;
     name: string;
@@ -932,7 +866,7 @@ function from_candid_record_n12(_uploadFile: (file: ExternalBlob) => Promise<Uin
         id: value.id,
         referralCode: value.referralCode,
         name: value.name,
-        children: from_candid_vec_n13(_uploadFile, _downloadFile, value.children),
+        children: from_candid_vec_n14(_uploadFile, _downloadFile, value.children),
         phone: value.phone,
         referredByName: value.referredByName
     };
@@ -985,8 +919,8 @@ function from_candid_variant_n7(_uploadFile: (file: ExternalBlob) => Promise<Uin
 }): PaymentStatus {
     return "pending" in value ? PaymentStatus.pending : "approved" in value ? PaymentStatus.approved : "rejected" in value ? PaymentStatus.rejected : value;
 }
-function from_candid_vec_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_ReferralNode>): Array<ReferralNode> {
-    return value.map((x)=>from_candid_ReferralNode_n11(_uploadFile, _downloadFile, x));
+function from_candid_vec_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_ReferralNode>): Array<ReferralNode> {
+    return value.map((x)=>from_candid_ReferralNode_n12(_uploadFile, _downloadFile, x));
 }
 function from_candid_vec_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_PaymentSubmission>): Array<PaymentSubmission> {
     return value.map((x)=>from_candid_PaymentSubmission_n4(_uploadFile, _downloadFile, x));

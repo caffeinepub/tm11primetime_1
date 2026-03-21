@@ -21,8 +21,9 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
-import type { Video, WatchRecord } from "../backend.d";
+import type { Video } from "../backend.d";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import type { WatchRecord } from "../hooks/useQueries";
 import { useVideosByCategory, useWatchHistory } from "../hooks/useQueries";
 
 const CATEGORIES = [

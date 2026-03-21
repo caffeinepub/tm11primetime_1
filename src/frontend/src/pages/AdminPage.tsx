@@ -48,6 +48,8 @@ import {
   BarChart3,
   CheckCircle,
   Crown,
+  ExternalLink,
+  IndianRupee,
   Link as LinkIcon,
   Loader2,
   Lock,
@@ -61,6 +63,7 @@ import {
   RefreshCw,
   Shield,
   Trash2,
+  Tv,
   UserCheck,
   Users,
   XCircle,
@@ -70,14 +73,19 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import type { ReferralNode, User } from "../backend.d";
+import { getActorWithRetry } from "../globalActor";
 import {
   useAddVideoMutation,
+  useAllChannelsAdmin,
   useAllPaymentSubmissions,
   useAllReferralTreesAdmin,
+  useAllUserVideosAdmin,
   useAllUsers,
   useAllVideosPublic,
+  useDeleteChannelAdminMutation,
   useDeletePaymentSubmissionMutation,
   useDeleteUserMutation,
+  useDeleteUserVideoAdminMutation,
   useDeleteVideoMutation,
   useReferralTreeByPhoneAdmin,
   useUpdateUserMutation,
@@ -318,14 +326,7 @@ interface MatrixAdminTabProps {
   refetchAllTrees: () => void;
   selectedPhone: string | null;
   setSelectedPhone: (phone: string | null) => void;
-  selectedUserTree: {
-    id: bigint;
-    referralCode: string;
-    name: string;
-    children: Array<ReferralNode>;
-    phone: string;
-    referredByName: string;
-  } | null;
+  selectedUserTree: ReferralNode | null;
   selectedTreeLoading: boolean;
 }
 
@@ -542,14 +543,7 @@ function MatrixAdminTab({
                   >
                     <div className="flex justify-center pt-6 min-w-max pb-4 px-4">
                       <AdminMatrixNode
-                        node={{
-                          id: selectedUserTree.id,
-                          referralCode: selectedUserTree.referralCode,
-                          name: selectedUserTree.name,
-                          children: selectedUserTree.children,
-                          phone: selectedUserTree.phone,
-                          referredByName: selectedUserTree.referredByName,
-                        }}
+                        node={selectedUserTree}
                         depth={0}
                         maxDepth={5}
                         slotIndex={0}
@@ -708,6 +702,45 @@ function AdminLoginScreen({ onLogin }: AdminLoginScreenProps) {
 
 export default function AdminPage() {
   // Simple local password auth -- no blockchain dependency
+  const [joiningBonus, setJoiningBonus] = useState<number>(150);
+  const [joiningBonusInput, setJoiningBonusInput] = useState<string>("150");
+  const [savingBonus, setSavingBonus] = useState(false);
+
+  // Load joining bonus from backend
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
+  useEffect(() => {
+    getActorWithRetry()
+      .then((actor) => (actor as any).getJoiningBonus() as Promise<bigint>)
+      .then((v) => {
+        const n = Number(v);
+        setJoiningBonus(n);
+        setJoiningBonusInput(String(n));
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSaveBonus = async () => {
+    const val = Number.parseInt(joiningBonusInput, 10);
+    if (Number.isNaN(val) || val < 0) {
+      toast.error("Enter a valid amount");
+      return;
+    }
+    setSavingBonus(true);
+    try {
+      const actor = await getActorWithRetry();
+      await (actor as any).setJoiningBonusWithPassword(
+        ADMIN_PASSWORD,
+        BigInt(val),
+      );
+      setJoiningBonus(val);
+      toast.success(`Joining bonus updated to ₹${val}`);
+    } catch (e) {
+      toast.error(`Failed to save: ${String(e)}`);
+    } finally {
+      setSavingBonus(false);
+    }
+  };
+
   const [isAdminLoggedIn, setIsAdminLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem(ADMIN_SESSION_KEY) === "true";
   });
@@ -818,6 +851,14 @@ export default function AdminPage() {
   const { data: selectedUserTree, isLoading: selectedTreeLoading } =
     useReferralTreeByPhoneAdmin(selectedPhone);
 
+  const { data: adminUserChannels = [], isLoading: userChannelsLoading } =
+    useAllChannelsAdmin(isAdminLoggedIn);
+
+  const { data: adminUserVideos = [], isLoading: userVideosLoading } =
+    useAllUserVideosAdmin(isAdminLoggedIn);
+
+  const deleteChannelAdmin = useDeleteChannelAdminMutation();
+  const deleteUserVideoAdmin = useDeleteUserVideoAdminMutation();
   // ── Auto-Approve state ─────────────────────────────────────────────────────
   const [autoApproveEnabled, setAutoApproveEnabled] = useState<boolean>(() => {
     return localStorage.getItem("admin_auto_approve") === "true";
@@ -1177,6 +1218,14 @@ export default function AdminPage() {
               Matrix
             </TabsTrigger>
             <TabsTrigger
+              value="userchannels"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              data-ocid="admin.userchannels.tab"
+            >
+              <Tv className="w-4 h-4" />
+              User Channels ({adminUserChannels.length})
+            </TabsTrigger>
+            <TabsTrigger
               value="stats"
               className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
               data-ocid="admin.stats.tab"
@@ -1513,6 +1562,62 @@ export default function AdminPage() {
 
           {/* ── PAYMENTS TAB ── */}
           <TabsContent value="payments" data-ocid="admin.payments.panel">
+            {/* Joining Bonus Settings Card */}
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.3 }}
+              className="mb-4"
+            >
+              <Card
+                className="card-premium border-primary/20"
+                data-ocid="admin.joining_bonus.card"
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-4">
+                    <div className="w-10 h-10 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center flex-shrink-0">
+                      <IndianRupee className="w-5 h-5 text-primary" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="font-ui font-semibold text-sm text-foreground mb-0.5">
+                        Joining Bonus (₹)
+                      </div>
+                      <p className="text-xs text-muted-foreground font-body mb-3">
+                        Amount credited to user wallet on payment approval.
+                        Currently:{" "}
+                        <strong className="text-primary">
+                          ₹{joiningBonus}
+                        </strong>
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input
+                          type="number"
+                          min="0"
+                          value={joiningBonusInput}
+                          onChange={(e) => setJoiningBonusInput(e.target.value)}
+                          className="w-28 bg-secondary border-border font-ui text-sm h-8"
+                          placeholder="150"
+                          data-ocid="admin.joining_bonus.input"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={handleSaveBonus}
+                          disabled={savingBonus}
+                          className="bg-primary text-primary-foreground font-ui text-xs h-8"
+                          data-ocid="admin.joining_bonus.save_button"
+                        >
+                          {savingBonus ? (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            "Save"
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
             {/* Auto-Approve Toggle Card */}
             <motion.div
               initial={{ opacity: 0, y: -8 }}
@@ -2668,9 +2773,207 @@ export default function AdminPage() {
               refetchAllTrees={() => void refetchAllTrees()}
               selectedPhone={selectedPhone}
               setSelectedPhone={setSelectedPhone}
-              selectedUserTree={selectedUserTree ?? null}
+              selectedUserTree={(selectedUserTree as ReferralNode) ?? null}
               selectedTreeLoading={selectedTreeLoading}
             />
+          </TabsContent>
+
+          {/* ── USER CHANNELS TAB ── */}
+          <TabsContent value="userchannels">
+            <div className="space-y-6">
+              {/* User Channels */}
+              <Card className="card-premium">
+                <CardHeader className="pb-3">
+                  <CardTitle className="font-display font-bold text-lg flex items-center gap-2">
+                    <Tv className="w-5 h-5 text-primary" />
+                    User Channels
+                  </CardTitle>
+                  <p className="text-muted-foreground text-xs font-body">
+                    Channels created by users
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {userChannelsLoading ? (
+                    <div
+                      className="space-y-2"
+                      data-ocid="admin.userchannels.loading_state"
+                    >
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-12 rounded-lg" />
+                      ))}
+                    </div>
+                  ) : adminUserChannels.length === 0 ? (
+                    <div
+                      className="text-center py-8 text-muted-foreground font-body text-sm"
+                      data-ocid="admin.userchannels.empty_state"
+                    >
+                      No user channels yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {adminUserChannels.map((ch, idx) => (
+                        <div
+                          key={String(ch.id)}
+                          className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20"
+                          data-ocid={`admin.userchannels.row.${idx + 1}`}
+                        >
+                          {ch.thumbnailUrl ? (
+                            <img
+                              src={ch.thumbnailUrl}
+                              alt={ch.name}
+                              className="w-10 h-10 rounded-lg object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                              <Tv className="w-5 h-5 text-primary" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-ui font-semibold text-sm text-foreground truncate">
+                              {ch.name}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-body">
+                              Owner: {ch.ownerPhone}
+                            </p>
+                            {ch.description && (
+                              <p className="text-xs text-muted-foreground font-body truncate">
+                                {ch.description}
+                              </p>
+                            )}
+                          </div>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-destructive hover:bg-destructive/10 flex-shrink-0"
+                            onClick={async () => {
+                              if (
+                                !confirm(
+                                  "Delete this channel and all its videos?",
+                                )
+                              )
+                                return;
+                              try {
+                                await deleteChannelAdmin.mutateAsync(ch.id);
+                                toast.success("Channel deleted");
+                              } catch {
+                                toast.error("Failed to delete channel");
+                              }
+                            }}
+                            data-ocid={`admin.userchannels.delete_button.${idx + 1}`}
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* User Videos */}
+              <Card className="card-premium">
+                <CardHeader className="pb-3">
+                  <CardTitle className="font-display font-bold text-lg flex items-center gap-2">
+                    <PlayCircle className="w-5 h-5 text-primary" />
+                    User Uploaded Videos
+                  </CardTitle>
+                  <p className="text-muted-foreground text-xs font-body">
+                    Videos uploaded by users to their channels
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  {userVideosLoading ? (
+                    <div
+                      className="space-y-2"
+                      data-ocid="admin.uservideos.loading_state"
+                    >
+                      {[1, 2, 3].map((i) => (
+                        <Skeleton key={i} className="h-12 rounded-lg" />
+                      ))}
+                    </div>
+                  ) : adminUserVideos.length === 0 ? (
+                    <div
+                      className="text-center py-8 text-muted-foreground font-body text-sm"
+                      data-ocid="admin.uservideos.empty_state"
+                    >
+                      No user videos yet.
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {adminUserVideos.map((video, idx) => (
+                        <div
+                          key={String(video.id)}
+                          className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20"
+                          data-ocid={`admin.uservideos.row.${idx + 1}`}
+                        >
+                          {video.thumbnailUrl ? (
+                            <img
+                              src={video.thumbnailUrl}
+                              alt={video.title}
+                              className="w-16 h-10 rounded-lg object-cover flex-shrink-0"
+                            />
+                          ) : (
+                            <div className="w-16 h-10 rounded-lg bg-primary/20 flex items-center justify-center flex-shrink-0">
+                              <PlayCircle className="w-5 h-5 text-primary" />
+                            </div>
+                          )}
+                          <div className="flex-1 min-w-0">
+                            <p className="font-ui font-semibold text-sm text-foreground truncate">
+                              {video.title}
+                            </p>
+                            <p className="text-xs text-muted-foreground font-body">
+                              By: {video.ownerPhone}
+                            </p>
+                            {video.category && (
+                              <Badge
+                                variant="secondary"
+                                className="text-[10px] px-1.5 py-0 h-4 mt-0.5"
+                              >
+                                {video.category}
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            <a
+                              href={video.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="text-primary hover:bg-primary/10"
+                              >
+                                <ExternalLink className="w-3.5 h-3.5" />
+                              </Button>
+                            </a>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-destructive hover:bg-destructive/10"
+                              onClick={async () => {
+                                if (!confirm("Delete this video?")) return;
+                                try {
+                                  await deleteUserVideoAdmin.mutateAsync(
+                                    video.id,
+                                  );
+                                  toast.success("Video deleted");
+                                } catch {
+                                  toast.error("Failed to delete video");
+                                }
+                              }}
+                              data-ocid={`admin.uservideos.delete_button.${idx + 1}`}
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           {/* ── STATS TAB ── */}

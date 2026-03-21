@@ -5,10 +5,10 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
-  redirect,
 } from "@tanstack/react-router";
 import { Layout } from "./components/Layout";
 import AdminPage from "./pages/AdminPage";
+import ChannelsPage from "./pages/ChannelsPage";
 import DashboardPage from "./pages/DashboardPage";
 import LandingPage from "./pages/LandingPage";
 import RegisterPage from "./pages/RegisterPage";
@@ -16,7 +16,7 @@ import VideoPlayerPage from "./pages/VideoPlayerPage";
 import VideosPage from "./pages/VideosPage";
 import WalletPage from "./pages/WalletPage";
 
-// ─── Root Route ───────────────────────────────────────────────────────────────
+// ─── Root Route ─────────────────────────────────────────────────────────────────────
 const rootRoute = createRootRoute({
   component: () => (
     <>
@@ -36,14 +36,14 @@ const rootRoute = createRootRoute({
   ),
 });
 
-// ─── Landing / Auth ───────────────────────────────────────────────────────────
+// ─── Landing / Auth ───────────────────────────────────────────────────────────────
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
   component: LandingPage,
 });
 
-// ─── Register ─────────────────────────────────────────────────────────────────
+// ─── Register ─────────────────────────────────────────────────────────────────────────
 const registerRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/register",
@@ -56,7 +56,7 @@ const registerRoute = createRoute({
   component: RegisterPage,
 });
 
-// ─── Layout Route (authenticated pages) ──────────────────────────────────────
+// ─── Layout Route (authenticated pages) ──────────────────────────────────────────────
 const layoutRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "layout",
@@ -67,14 +67,14 @@ const layoutRoute = createRoute({
   ),
 });
 
-// ─── Dashboard ────────────────────────────────────────────────────────────────
+// ─── Dashboard ───────────────────────────────────────────────────────────────────────
 const dashboardRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: "/dashboard",
   component: DashboardPage,
 });
 
-// ─── Videos ───────────────────────────────────────────────────────────────────
+// ─── Videos ─────────────────────────────────────────────────────────────────────────
 const videosRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: "/videos",
@@ -87,21 +87,28 @@ const videoPlayerRoute = createRoute({
   component: VideoPlayerPage,
 });
 
-// ─── Wallet ───────────────────────────────────────────────────────────────────
+// ─── Channels ────────────────────────────────────────────────────────────────────────
+const channelsRoute = createRoute({
+  getParentRoute: () => layoutRoute,
+  path: "/channels",
+  component: ChannelsPage,
+});
+
+// ─── Wallet ────────────────────────────────────────────────────────────────────────
 const walletRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: "/wallet",
   component: WalletPage,
 });
 
-// ─── Admin ────────────────────────────────────────────────────────────────────
+// ─── Admin ─────────────────────────────────────────────────────────────────────────
 const adminRoute = createRoute({
   getParentRoute: () => layoutRoute,
   path: "/admin",
   component: AdminPage,
 });
 
-// ─── Route Tree ───────────────────────────────────────────────────────────────
+// ─── Route Tree ──────────────────────────────────────────────────────────────────────
 const routeTree = rootRoute.addChildren([
   indexRoute,
   registerRoute,
@@ -109,12 +116,13 @@ const routeTree = rootRoute.addChildren([
     dashboardRoute,
     videosRoute,
     videoPlayerRoute,
+    channelsRoute,
     walletRoute,
     adminRoute,
   ]),
 ]);
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// ─── Router ───────────────────────────────────────────────────────────────────────
 const router = createRouter({
   routeTree,
   defaultPreload: "intent",
@@ -126,7 +134,7 @@ declare module "@tanstack/react-router" {
   }
 }
 
-// ─── App ──────────────────────────────────────────────────────────────────────
+// ─── App ────────────────────────────────────────────────────────────────────────────
 export default function App() {
   return <RouterProvider router={router} />;
 }

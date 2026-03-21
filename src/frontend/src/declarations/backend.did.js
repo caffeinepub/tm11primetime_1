@@ -14,6 +14,21 @@ export const UserRole = IDL.Variant({
   'user' : IDL.Null,
   'guest' : IDL.Null,
 });
+export const ChannelLink = IDL.Record({
+  'id' : IDL.Nat,
+  'url' : IDL.Text,
+  'name' : IDL.Text,
+  'createdAt' : IDL.Int,
+});
+export const UserChannel = IDL.Record({
+  'id' : IDL.Nat,
+  'thumbnailUrl' : IDL.Text,
+  'name' : IDL.Text,
+  'createdAt' : IDL.Int,
+  'ownerPhone' : IDL.Text,
+  'description' : IDL.Text,
+  'bannerUrl' : IDL.Text,
+});
 export const PaymentStatus = IDL.Variant({
   'pending' : IDL.Null,
   'approved' : IDL.Null,
@@ -28,6 +43,18 @@ export const PaymentSubmission = IDL.Record({
   'timestamp' : IDL.Int,
   'phone' : IDL.Text,
   'amount' : IDL.Text,
+});
+export const UserVideo = IDL.Record({
+  'id' : IDL.Nat,
+  'url' : IDL.Text,
+  'status' : IDL.Text,
+  'title' : IDL.Text,
+  'thumbnailUrl' : IDL.Text,
+  'channelId' : IDL.Nat,
+  'createdAt' : IDL.Int,
+  'ownerPhone' : IDL.Text,
+  'description' : IDL.Text,
+  'category' : IDL.Text,
 });
 export const User = IDL.Record({
   'id' : IDL.Nat,
@@ -45,26 +72,19 @@ export const User = IDL.Record({
 export const Video = IDL.Record({
   'id' : IDL.Nat,
   'url' : IDL.Text,
+  'channelUrl' : IDL.Text,
   'title' : IDL.Text,
   'duration' : IDL.Nat,
+  'thumbnailUrl' : IDL.Text,
   'createdAt' : IDL.Int,
   'description' : IDL.Text,
   'category' : IDL.Text,
-  'channelUrl' : IDL.Text,
-  'thumbnailUrl' : IDL.Text,
 });
 export const UserProfile = IDL.Record({
   'userId' : IDL.Nat,
   'name' : IDL.Text,
   'email' : IDL.Text,
   'phone' : IDL.Text,
-});
-export const WatchRecord = IDL.Record({
-  'userId' : IDL.Nat,
-  'completed' : IDL.Bool,
-  'watchedSeconds' : IDL.Nat,
-  'subscribed' : IDL.Bool,
-  'videoId' : IDL.Nat,
 });
 ReferralNode.fill(
   IDL.Record({
@@ -76,14 +96,6 @@ ReferralNode.fill(
     'referredByName' : IDL.Text,
   })
 );
-export const Transaction = IDL.Record({
-  'id' : IDL.Nat,
-  'userId' : IDL.Nat,
-  'note' : IDL.Text,
-  'timestamp' : IDL.Int,
-  'txType' : IDL.Text,
-  'amount' : IDL.Int,
-});
 export const PaymentSubmissionInput = IDL.Record({
   'utr' : IDL.Text,
   'name' : IDL.Text,
@@ -93,28 +105,52 @@ export const PaymentSubmissionInput = IDL.Record({
 
 export const idlService = IDL.Service({
   '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-  'addVideo' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
-      [],
+  'addChannelWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text],
+      [IDL.Nat],
       [],
     ),
   'addVideoWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Text],
-      [],
+      [
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Text,
+        IDL.Nat,
+        IDL.Text,
+        IDL.Text,
+      ],
+      [IDL.Nat],
       [],
     ),
   'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-  'claimFirstAdmin' : IDL.Func([], [], []),
-  'deletePaymentSubmissionWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-  'deleteUser' : IDL.Func([IDL.Nat], [], []),
-  'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-  'deleteVideo' : IDL.Func([IDL.Nat], [], []),
-  'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-  'updateVideoChannelInfoWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text, IDL.Text], [], []),
-  'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
-  'getAllPaymentSubmissions' : IDL.Func(
+  'createChannelWithPhone' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [IDL.Nat],
       [],
-      [IDL.Vec(PaymentSubmission)],
+    ),
+  'deleteChannelVideoWithPhone' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deleteChannelWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deleteChannelWithPasswordById' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deletePaymentSubmissionWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deleteUserVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+  'editUserWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
+  'getAllChannelsListWithPassword' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(ChannelLink)],
+      ['query'],
+    ),
+  'getAllChannelsPublic' : IDL.Func([], [IDL.Vec(UserChannel)], ['query']),
+  'getAllChannelsWithPassword' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(UserChannel)],
       ['query'],
     ),
   'getAllPaymentSubmissionsWithPassword' : IDL.Func(
@@ -122,108 +158,76 @@ export const idlService = IDL.Service({
       [IDL.Vec(PaymentSubmission)],
       ['query'],
     ),
-  'getAllReferralTreesWithPassword' : IDL.Func(
+  'getAllUserVideosWithPassword' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(UserVideo)],
+      ['query'],
+    ),
+  'getAllUsersWatchTimeWithPassword' : IDL.Func(
       [IDL.Text],
       [
         IDL.Vec(
           IDL.Record({
-            'totalNetwork' : IDL.Nat,
-            'directReferrals' : IDL.Nat,
-            'referralCode' : IDL.Text,
+            'totalSeconds' : IDL.Nat,
             'userId' : IDL.Nat,
             'name' : IDL.Text,
-            'isPaid' : IDL.Bool,
             'phone' : IDL.Text,
           })
         ),
       ],
       ['query'],
     ),
-  'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
   'getAllUsersWithPassword' : IDL.Func([IDL.Text], [IDL.Vec(User)], ['query']),
   'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
-  'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
-  'getVideosByCategoryPublic' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-  'getMyPaymentSubmissions' : IDL.Func(
-      [],
-      [IDL.Vec(PaymentSubmission)],
-      ['query'],
-    ),
-  'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
-  'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
-  'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
-  'getReferralTreeByCode' : IDL.Func(
+  'getChannelVideos' : IDL.Func([IDL.Nat], [IDL.Vec(UserVideo)], ['query']),
+  'getMyChannelByPhone' : IDL.Func(
       [IDL.Text],
-      [
-        IDL.Record({
-          'id' : IDL.Nat,
-          'referralCode' : IDL.Text,
-          'name' : IDL.Text,
-          'children' : IDL.Vec(ReferralNode),
-          'phone' : IDL.Text,
-          'referredByName' : IDL.Text,
-        }),
-      ],
+      [IDL.Opt(UserChannel)],
       ['query'],
     ),
-  'getReferralTreeByPhoneWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Text],
-      [
-        IDL.Opt(
-          IDL.Record({
-            'id' : IDL.Nat,
-            'referralCode' : IDL.Text,
-            'name' : IDL.Text,
-            'children' : IDL.Vec(ReferralNode),
-            'phone' : IDL.Text,
-            'referredByName' : IDL.Text,
-          })
-        ),
-      ],
+  'getReferralTreeWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat],
+      [ReferralNode],
       ['query'],
     ),
-  'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
   'getUserByPhone' : IDL.Func([IDL.Text], [IDL.Opt(User)], ['query']),
   'getUserProfile' : IDL.Func(
       [IDL.Principal],
       [IDL.Opt(UserProfile)],
       ['query'],
     ),
+  'getUserWatchTime' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
+  'getUserWatchTimeByPhone' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
   'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
-  'isAdminAssigned' : IDL.Func([], [IDL.Bool], ['query']),
+  'initializeAdmin' : IDL.Func([IDL.Text], [], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-  'recordWatchProgress' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool], [], []),
-  'register' : IDL.Func(
-      [IDL.Text, IDL.Text, IDL.Text, IDL.Text],
-      [IDL.Text],
+  'recordWatch' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool], [], []),
+  'recordWatchByPhone' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool],
+      [],
       [],
     ),
+  'registerUser' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [IDL.Nat],
+      [],
+    ),
+  'rejectPaymentSubmissionWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
   'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
-  'updateUser' : IDL.Func(
-      [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+  'updateChannelWithPhone' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
       [],
       [],
     ),
-  'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
-  'updateUserStatusWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Bool],
-      [],
-      [],
-    ),
-  'updateUserWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
-      [],
+  'uploadVideoToChannelWithPhone' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [IDL.Nat],
       [],
     ),
-  'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
-  'verifyPaymentSubmissionWithPassword' : IDL.Func(
-      [IDL.Text, IDL.Nat, IDL.Text],
-      [],
-      [],
-    ),
+  'verifyPaymentSubmissionWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
 });
 
 export const idlInitArgs = [];
@@ -234,6 +238,21 @@ export const idlFactory = ({ IDL }) => {
     'admin' : IDL.Null,
     'user' : IDL.Null,
     'guest' : IDL.Null,
+  });
+  const ChannelLink = IDL.Record({
+    'id' : IDL.Nat,
+    'url' : IDL.Text,
+    'name' : IDL.Text,
+    'createdAt' : IDL.Int,
+  });
+  const UserChannel = IDL.Record({
+    'id' : IDL.Nat,
+    'thumbnailUrl' : IDL.Text,
+    'name' : IDL.Text,
+    'createdAt' : IDL.Int,
+    'ownerPhone' : IDL.Text,
+    'description' : IDL.Text,
+    'bannerUrl' : IDL.Text,
   });
   const PaymentStatus = IDL.Variant({
     'pending' : IDL.Null,
@@ -249,6 +268,18 @@ export const idlFactory = ({ IDL }) => {
     'timestamp' : IDL.Int,
     'phone' : IDL.Text,
     'amount' : IDL.Text,
+  });
+  const UserVideo = IDL.Record({
+    'id' : IDL.Nat,
+    'url' : IDL.Text,
+    'status' : IDL.Text,
+    'title' : IDL.Text,
+    'thumbnailUrl' : IDL.Text,
+    'channelId' : IDL.Nat,
+    'createdAt' : IDL.Int,
+    'ownerPhone' : IDL.Text,
+    'description' : IDL.Text,
+    'category' : IDL.Text,
   });
   const User = IDL.Record({
     'id' : IDL.Nat,
@@ -266,26 +297,19 @@ export const idlFactory = ({ IDL }) => {
   const Video = IDL.Record({
     'id' : IDL.Nat,
     'url' : IDL.Text,
+    'channelUrl' : IDL.Text,
     'title' : IDL.Text,
     'duration' : IDL.Nat,
+    'thumbnailUrl' : IDL.Text,
     'createdAt' : IDL.Int,
     'description' : IDL.Text,
     'category' : IDL.Text,
-    'channelUrl' : IDL.Text,
-    'thumbnailUrl' : IDL.Text,
   });
   const UserProfile = IDL.Record({
     'userId' : IDL.Nat,
     'name' : IDL.Text,
     'email' : IDL.Text,
     'phone' : IDL.Text,
-  });
-  const WatchRecord = IDL.Record({
-    'userId' : IDL.Nat,
-    'completed' : IDL.Bool,
-    'watchedSeconds' : IDL.Nat,
-    'subscribed' : IDL.Bool,
-    'videoId' : IDL.Nat,
   });
   ReferralNode.fill(
     IDL.Record({
@@ -297,14 +321,6 @@ export const idlFactory = ({ IDL }) => {
       'referredByName' : IDL.Text,
     })
   );
-  const Transaction = IDL.Record({
-    'id' : IDL.Nat,
-    'userId' : IDL.Nat,
-    'note' : IDL.Text,
-    'timestamp' : IDL.Int,
-    'txType' : IDL.Text,
-    'amount' : IDL.Int,
-  });
   const PaymentSubmissionInput = IDL.Record({
     'utr' : IDL.Text,
     'name' : IDL.Text,
@@ -314,32 +330,56 @@ export const idlFactory = ({ IDL }) => {
   
   return IDL.Service({
     '_initializeAccessControlWithSecret' : IDL.Func([IDL.Text], [], []),
-    'addVideo' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat],
-        [],
+    'addChannelWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text],
+        [IDL.Nat],
         [],
       ),
     'addVideoWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Nat, IDL.Text, IDL.Text],
-        [],
+        [
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Text,
+          IDL.Nat,
+          IDL.Text,
+          IDL.Text,
+        ],
+        [IDL.Nat],
         [],
       ),
     'assignCallerUserRole' : IDL.Func([IDL.Principal, UserRole], [], []),
-    'claimFirstAdmin' : IDL.Func([], [], []),
+    'createChannelWithPhone' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [IDL.Nat],
+        [],
+      ),
+    'deleteChannelVideoWithPhone' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'deleteChannelWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'deleteChannelWithPasswordById' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'deletePaymentSubmissionWithPassword' : IDL.Func(
         [IDL.Text, IDL.Nat],
         [],
         [],
       ),
-    'deleteUser' : IDL.Func([IDL.Nat], [], []),
+    'deleteUserVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'deleteUserWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-    'deleteVideo' : IDL.Func([IDL.Nat], [], []),
     'deleteVideoWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-    'updateVideoChannelInfoWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text, IDL.Text], [], []),
-    'forceSetAdmin' : IDL.Func([IDL.Text], [IDL.Text], []),
-    'getAllPaymentSubmissions' : IDL.Func(
+    'editUserWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text],
         [],
-        [IDL.Vec(PaymentSubmission)],
+        [],
+      ),
+    'getAllChannelsListWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(ChannelLink)],
+        ['query'],
+      ),
+    'getAllChannelsPublic' : IDL.Func([], [IDL.Vec(UserChannel)], ['query']),
+    'getAllChannelsWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(UserChannel)],
         ['query'],
       ),
     'getAllPaymentSubmissionsWithPassword' : IDL.Func(
@@ -347,109 +387,85 @@ export const idlFactory = ({ IDL }) => {
         [IDL.Vec(PaymentSubmission)],
         ['query'],
       ),
-    'getAllReferralTreesWithPassword' : IDL.Func(
+    'getAllUserVideosWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(UserVideo)],
+        ['query'],
+      ),
+    'getAllUsersWatchTimeWithPassword' : IDL.Func(
         [IDL.Text],
         [
           IDL.Vec(
             IDL.Record({
-              'totalNetwork' : IDL.Nat,
-              'directReferrals' : IDL.Nat,
-              'referralCode' : IDL.Text,
+              'totalSeconds' : IDL.Nat,
               'userId' : IDL.Nat,
               'name' : IDL.Text,
-              'isPaid' : IDL.Bool,
               'phone' : IDL.Text,
             })
           ),
         ],
         ['query'],
       ),
-    'getAllUsers' : IDL.Func([], [IDL.Vec(User)], ['query']),
     'getAllUsersWithPassword' : IDL.Func(
         [IDL.Text],
         [IDL.Vec(User)],
         ['query'],
       ),
     'getAllVideos' : IDL.Func([], [IDL.Vec(Video)], ['query']),
-    'getAllVideosPublic' : IDL.Func([], [IDL.Vec(Video)], ['query']),
-  'getVideosByCategoryPublic' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
-    'getMyPaymentSubmissions' : IDL.Func(
-        [],
-        [IDL.Vec(PaymentSubmission)],
-        ['query'],
-      ),
-    'getMyProfile' : IDL.Func([IDL.Nat], [User], ['query']),
-    'getMyWatchHistory' : IDL.Func([], [IDL.Vec(WatchRecord)], ['query']),
-    'getReferralTree' : IDL.Func([IDL.Nat], [ReferralNode], ['query']),
-    'getReferralTreeByCode' : IDL.Func(
+    'getChannelVideos' : IDL.Func([IDL.Nat], [IDL.Vec(UserVideo)], ['query']),
+    'getMyChannelByPhone' : IDL.Func(
         [IDL.Text],
-        [
-          IDL.Record({
-            'id' : IDL.Nat,
-            'referralCode' : IDL.Text,
-            'name' : IDL.Text,
-            'children' : IDL.Vec(ReferralNode),
-            'phone' : IDL.Text,
-            'referredByName' : IDL.Text,
-          }),
-        ],
+        [IDL.Opt(UserChannel)],
         ['query'],
       ),
-    'getReferralTreeByPhoneWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Text],
-        [
-          IDL.Opt(
-            IDL.Record({
-              'id' : IDL.Nat,
-              'referralCode' : IDL.Text,
-              'name' : IDL.Text,
-              'children' : IDL.Vec(ReferralNode),
-              'phone' : IDL.Text,
-              'referredByName' : IDL.Text,
-            })
-          ),
-        ],
+    'getReferralTreeWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat],
+        [ReferralNode],
         ['query'],
       ),
-    'getTransactions' : IDL.Func([], [IDL.Vec(Transaction)], ['query']),
     'getUserByPhone' : IDL.Func([IDL.Text], [IDL.Opt(User)], ['query']),
     'getUserProfile' : IDL.Func(
         [IDL.Principal],
         [IDL.Opt(UserProfile)],
         ['query'],
       ),
+    'getUserWatchTime' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
+    'getUserWatchTimeByPhone' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
     'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
-    'isAdminAssigned' : IDL.Func([], [IDL.Bool], ['query']),
+    'initializeAdmin' : IDL.Func([IDL.Text], [], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
-    'recordWatchProgress' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool], [], []),
-    'register' : IDL.Func(
+    'recordWatch' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool], [], []),
+    'recordWatchByPhone' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool],
+        [],
+        [],
+      ),
+    'registerUser' : IDL.Func(
         [IDL.Text, IDL.Text, IDL.Text, IDL.Text],
-        [IDL.Text],
+        [IDL.Nat],
+        [],
+      ),
+    'rejectPaymentSubmissionWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat],
+        [],
         [],
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
     'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
-    'updateUser' : IDL.Func(
-        [IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
+    'updateChannelWithPhone' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
         [],
         [],
       ),
-    'updateUserStatus' : IDL.Func([IDL.Nat, IDL.Bool], [], []),
-    'updateUserStatusWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Bool],
-        [],
-        [],
-      ),
-    'updateUserWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Bool],
-        [],
+    'uploadVideoToChannelWithPhone' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [IDL.Nat],
         [],
       ),
-    'verifyPaymentSubmission' : IDL.Func([IDL.Nat, IDL.Text], [], []),
     'verifyPaymentSubmissionWithPassword' : IDL.Func(
-        [IDL.Text, IDL.Nat, IDL.Text],
+        [IDL.Text, IDL.Nat],
         [],
         [],
       ),

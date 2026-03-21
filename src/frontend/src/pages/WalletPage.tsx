@@ -13,6 +13,8 @@ import {
 import {
   ArrowDownRight,
   ArrowUpRight,
+  Banknote,
+  CheckCircle,
   Clock,
   Gift,
   TrendingDown,
@@ -20,8 +22,9 @@ import {
   Wallet,
 } from "lucide-react";
 import { motion } from "motion/react";
-import type { Transaction } from "../backend.d";
+import { useState } from "react";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
+import type { Transaction } from "../hooks/useQueries";
 import { useUserByPhone } from "../hooks/useQueries";
 
 const TX_TYPE_CONFIG: Record<
@@ -131,6 +134,11 @@ export default function WalletPage() {
   const walletBalance = userProfile?.walletBalance ?? BigInt(0);
   const walletRs = Number(walletBalance) / 100;
 
+  const [showWithdrawForm, setShowWithdrawForm] = useState(false);
+  const [withdrawUpi, setWithdrawUpi] = useState("");
+  const [withdrawSubmitted, setWithdrawSubmitted] = useState(false);
+  const canWithdraw = walletRs >= 500;
+
   // Transactions are principal-gated and not available for phone-based users.
   // Show sample/demo data to illustrate the structure.
   const txLoading = false;
@@ -203,6 +211,94 @@ export default function WalletPage() {
           </CardContent>
         </Card>
       </motion.div>
+
+      {/* Withdrawal Section */}
+      {canWithdraw && (
+        <motion.div
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3, delay: 0.08 }}
+          className="mb-6"
+        >
+          <Card className="card-premium border-green-500/30">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-500/15 flex items-center justify-center">
+                    <Banknote className="w-5 h-5 text-green-400" />
+                  </div>
+                  <div>
+                    <div className="font-display font-bold text-foreground">
+                      Withdrawal Available
+                    </div>
+                    <div className="text-xs text-muted-foreground font-body">
+                      Your balance has reached ₹500
+                    </div>
+                  </div>
+                </div>
+                {!withdrawSubmitted && !showWithdrawForm && (
+                  <button
+                    onClick={() => setShowWithdrawForm(true)}
+                    type="button"
+                    className="px-4 py-2 rounded-xl bg-green-500/20 text-green-300 border border-green-500/30 text-sm font-ui font-semibold hover:bg-green-500/30 transition-colors"
+                  >
+                    Request Withdrawal
+                  </button>
+                )}
+              </div>
+
+              {withdrawSubmitted ? (
+                <div className="flex items-center gap-2 text-green-400 text-sm font-body bg-green-500/10 rounded-xl p-3">
+                  <CheckCircle className="w-4 h-4" />
+                  Withdrawal request submitted! Admin will process it within
+                  24–48 hours.
+                </div>
+              ) : showWithdrawForm ? (
+                <div className="space-y-3">
+                  <div>
+                    <label
+                      htmlFor="withdraw-upi"
+                      className="text-xs text-muted-foreground font-ui mb-1 block"
+                    >
+                      Your UPI ID
+                    </label>
+                    <input
+                      type="text"
+                      value={withdrawUpi}
+                      onChange={(e) => setWithdrawUpi(e.target.value)}
+                      id="withdraw-upi"
+                      placeholder="yourname@upi"
+                      className="w-full bg-muted/30 border border-border rounded-xl px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        if (withdrawUpi.trim()) {
+                          setWithdrawSubmitted(true);
+                          setShowWithdrawForm(false);
+                        }
+                      }}
+                      disabled={!withdrawUpi.trim()}
+                      type="button"
+                      className="flex-1 px-4 py-2 rounded-xl bg-green-500/20 text-green-300 border border-green-500/30 text-sm font-ui font-semibold hover:bg-green-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      Submit Request
+                    </button>
+                    <button
+                      onClick={() => setShowWithdrawForm(false)}
+                      type="button"
+                      className="px-4 py-2 rounded-xl bg-muted/40 text-muted-foreground text-sm font-ui hover:bg-muted/60 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">

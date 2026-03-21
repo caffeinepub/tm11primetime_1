@@ -1,16 +1,15 @@
 import Map "mo:core/Map";
 import Nat "mo:core/Nat";
-import Array "mo:core/Array";
-import Time "mo:core/Time";
-import Iter "mo:core/Iter";
-import Order "mo:core/Order";
-import Runtime "mo:core/Runtime";
 import Int "mo:core/Int";
+import Time "mo:core/Time";
+import Array "mo:core/Array";
+import Order "mo:core/Order";
+import Iter "mo:core/Iter";
+import Runtime "mo:core/Runtime";
 import Text "mo:core/Text";
 import Principal "mo:core/Principal";
 import Char "mo:core/Char";
 import List "mo:core/List";
-
 import MixinAuthorization "authorization/MixinAuthorization";
 import AccessControl "authorization/access-control";
 
@@ -18,8 +17,8 @@ actor {
   let accessControlState = AccessControl.initState();
   include MixinAuthorization(accessControlState);
 
-  // Admin password constant
   let ADMIN_PASSWORD = "aakbn@1014";
+  let adminToken = "aakbn@1014";
 
   type User = {
     id : Nat;
@@ -35,25 +34,7 @@ actor {
     role : Text;
   };
 
-  // Stable Video type -- do NOT add fields here to keep upgrade compatibility
   type Video = {
-    id : Nat;
-    title : Text;
-    category : Text;
-    url : Text;
-    description : Text;
-    duration : Nat;
-    createdAt : Int;
-  };
-
-  // Extra channel/thumbnail info stored separately for upgrade compatibility
-  type VideoExtra = {
-    channelUrl : Text;
-    thumbnailUrl : Text;
-  };
-
-  // Full Video returned to frontend (merges Video + VideoExtra)
-  type VideoFull = {
     id : Nat;
     title : Text;
     category : Text;
@@ -89,6 +70,7 @@ actor {
     children : [ReferralNode];
     phone : Text;
     referredByName : Text;
+    referredByCode : Text;
   };
 
   public type UserProfile = {
@@ -122,7 +104,6 @@ actor {
     amount : Text;
   };
 
-  // Common node type for all referral stats (with isPaid and counts)
   type ReferralStatNode = {
     id : Nat;
     name : Text;
@@ -134,20 +115,125 @@ actor {
     children : [ReferralStatNode];
   };
 
-  var nextUserId = 1;
-  var nextVideoId = 1;
-  var nextTransactionId = 1;
-  var nextPaymentSubmissionId = 1;
-  var adminAssigned = false;
+  type UserChannel = {
+    id : Nat;
+    name : Text;
+    description : Text;
+    ownerPhone : Text;
+    thumbnailUrl : Text;
+    bannerUrl : Text;
+    createdAt : Int;
+  };
 
+  type UserVideo = {
+    id : Nat;
+    channelId : Nat;
+    title : Text;
+    url : Text;
+    description : Text;
+    thumbnailUrl : Text;
+    category : Text;
+    ownerPhone : Text;
+    status : Text;
+    createdAt : Int;
+  };
+
+  type ChannelLink = {
+    id : Nat;
+    name : Text;
+    url : Text;
+    createdAt : Int;
+  };
+
+  // ─── Stable counters (persist across upgrades) ───────────────────────────
+  stable var nextUserId = 1;
+  stable var nextVideoId = 1;
+  stable var nextTransactionId = 1;
+  stable var nextPaymentSubmissionId = 1;
+  stable var adminAssigned = false;
+  stable var joiningBonus : Nat = 150;
+  stable var nextChannelId = 1;
+  stable var nextUserVideoId = 1;
+  stable var nextChannelLinkId = 1;
+
+  // ─── Stable storage arrays (persist across upgrades) ─────────────────────
+  stable var usersStable : [User] = [];
+  stable var videosStable : [Video] = [];
+  stable var watchRecordsStable : [(Nat, WatchRecord)] = [];
+  stable var transactionsStable : [Transaction] = [];
+  stable var paymentSubmissionsStable : [PaymentSubmission] = [];
+  stable var userChannelsStable : [UserChannel] = [];
+  stable var userVideosStable : [UserVideo] = [];
+  stable var channelLinksStable : [ChannelLink] = [];
+
+  // ─── In-memory Maps (populated from stable arrays on upgrade) ────────────
   let users = Map.empty<Nat, User>();
   let videos = Map.empty<Nat, Video>();
-  let videoExtras = Map.empty<Nat, VideoExtra>();
   let watchRecords = Map.empty<Nat, WatchRecord>();
   let transactions = Map.empty<Nat, Transaction>();
   let principalToUserId = Map.empty<Principal, Nat>();
   let userProfiles = Map.empty<Principal, UserProfile>();
   let paymentSubmissions = Map.empty<Nat, PaymentSubmission>();
+  let userChannels = Map.empty<Nat, UserChannel>();
+  let userVideos = Map.empty<Nat, UserVideo>();
+  let phoneToUserId = Map.empty<Text, Nat>();
+  let channelLinks = Map.empty<Nat, ChannelLink>();
+
+  // ─── Restore state from stable arrays on canister start/upgrade ──────────
+  private func restoreState() {
+    for (user in usersStable.vals()) {
+      users.add(user.id, user);
+      phoneToUserId.add(user.phone, user.id);
+    };
+    for (video in videosStable.vals()) {
+      videos.add(video.id, video);
+    };
+    for ((key, record) in watchRecordsStable.vals()) {
+      watchRecords.add(key, record);
+    };
+    for (tx in transactionsStable.vals()) {
+      transactions.add(tx.id, tx);
+    };
+    for (sub in paymentSubmissionsStable.vals()) {
+      paymentSubmissions.add(sub.id, sub);
+    };
+    for (ch in userChannelsStable.vals()) {
+      userChannels.add(ch.id, ch);
+    };
+    for (uv in userVideosStable.vals()) {
+      userVideos.add(uv.id, uv);
+    };
+    for (cl in channelLinksStable.vals()) {
+      channelLinks.add(cl.id, cl);
+    };
+  };
+
+  // Run restore on canister init/upgrade
+  restoreState();
+
+  // ─── Upgrade hooks ────────────────────────────────────────────────────────
+  system func preupgrade() {
+    usersStable := users.values().toArray();
+    videosStable := videos.values().toArray();
+    watchRecordsStable := watchRecords.entries().toArray();
+    transactionsStable := transactions.values().toArray();
+    paymentSubmissionsStable := paymentSubmissions.values().toArray();
+    userChannelsStable := userChannels.values().toArray();
+    userVideosStable := userVideos.values().toArray();
+    channelLinksStable := channelLinks.values().toArray();
+  };
+
+  system func postupgrade() {
+    // Clear stable arrays to free heap memory after restore
+    usersStable := [];
+    videosStable := [];
+    watchRecordsStable := [];
+    transactionsStable := [];
+    paymentSubmissionsStable := [];
+    userChannelsStable := [];
+    userVideosStable := [];
+    channelLinksStable := [];
+  };
 
   module Transaction {
     public func compare(a : Transaction, b : Transaction) : Order.Order {
@@ -161,7 +247,12 @@ actor {
     };
   };
 
-  // Helper function to normalize phone numbers (remove spaces, dashes, parentheses)
+  module UserChannel {
+    public func compare(a : UserChannel, b : UserChannel) : Order.Order {
+      Int.compare(a.createdAt, b.createdAt);
+    };
+  };
+
   func normalizePhone(phone : Text) : Text {
     let chars = phone.chars();
     var result = "";
@@ -170,11 +261,19 @@ actor {
         result #= c.toText();
       };
     };
+
+    // Strip leading +91 or 91
+    if (result.startsWith(#text "+91")) {
+      result := result.trimStart(#text "+91");
+    } else if (result.startsWith(#text "91") and result.size() > 10) {
+      result := result.trimStart(#text "91");
+    };
+
     result;
   };
 
   func generateReferralCode(userId : Nat) : Text {
-    "REF" # userId.toText();
+    "REV" # userId.toText();
   };
 
   func findReferrals(referralCode : Text) : [Nat] {
@@ -201,6 +300,7 @@ actor {
       children = if (level < 15) { childrenNodes } else { [] };
       phone = user.phone;
       referredByName = findUserNameByReferralCode(user.referredBy);
+      referredByCode = user.referredBy;
     };
   };
 
@@ -212,11 +312,6 @@ actor {
     };
   };
 
-  func getUserIdFromPrincipal(caller : Principal) : ?Nat {
-    principalToUserId.get(caller);
-  };
-
-  // Helper function to verify password
   func verifyPassword(password : Text) : Bool {
     Text.equal(password, ADMIN_PASSWORD);
   };
@@ -236,287 +331,351 @@ actor {
     total;
   };
 
-  // NEW function: get stats for a single user
-  public query func getReferralTreeByCode(referralCode : Text) : async {
-    id : Nat;
-    name : Text;
-    referralCode : Text;
-    phone : Text;
-    referredByName : Text;
-    children : [ReferralNode];
-  } {
-    // Find user by referral code
-    let userOpt = users.values().toArray().find(
-      func(u) {
-        Text.equal(u.referralCode, referralCode);
-      }
-    );
+  // Phone-only ownership verification (no principal auth required)
+  func findUserByPhoneInternal(phone : Text) : ?User {
+    let normalizedPhone = normalizePhone(phone);
+    switch (phoneToUserId.get(normalizedPhone)) {
+      case (null) { null };
+      case (?userId) { users.get(userId) };
+    };
+  };
 
-    switch (userOpt) {
-      case (?user) {
-        buildReferralTree(user.id, 0);
-      };
-      case (null) {
-        {
-          id = 0;
-          name = "";
-          referralCode;
-          phone = "";
-          referredByName = "";
-          children = [];
+  func distributeReferralEarnings(userId : Nat) {
+    let user = switch (users.get(userId)) {
+      case (null) { return };
+      case (?u) { u };
+    };
+
+    if (Text.equal(user.referredBy, "")) { return };
+
+    let levels : [Nat] = [10, 5, 3, 2, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+    var currentReferralCode = user.referredBy;
+    var level = 0;
+
+    while (level < 15 and not Text.equal(currentReferralCode, "")) {
+      switch (users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) })) {
+        case (null) { return };
+        case (?referrer) {
+          let earnings = if (level < 7) {
+            levels[level];
+          } else {
+            0;
+          };
+
+          let updatedReferrer = {
+            referrer with
+            walletBalance = referrer.walletBalance + earnings;
+          };
+          users.add(referrer.id, updatedReferrer);
+
+          currentReferralCode := referrer.referredBy;
+          level += 1;
         };
       };
     };
   };
 
-  // NEW function: get tree by phone number with password verification
-  public query func getReferralTreeByPhoneWithPassword(password : Text, phone : Text) : async ?{
-    id : Nat;
-    name : Text;
-    referralCode : Text;
-    phone : Text;
-    referredByName : Text;
-    children : [ReferralNode];
-  } {
-    if (not verifyPassword(password)) {
-      return null;
+  // ========== ADMIN INITIALIZATION ==========
+
+  public shared ({ caller }) func initializeAdmin(userProvidedToken : Text) : async () {
+    if (adminAssigned) {
+      Runtime.trap("Admin already assigned");
     };
-
-    let normalizedPhone = normalizePhone(phone);
-
-    let userOpt = users.values().toArray().find(
-      func(u) {
-        Text.equal(normalizePhone(u.phone), normalizedPhone);
-      }
-    );
-
-    switch (userOpt) {
-      case (?user) {
-        ?buildReferralTree(user.id, 0);
-      };
-      case (null) { null };
-    };
+    AccessControl.initialize(accessControlState, caller, adminToken, userProvidedToken);
+    adminAssigned := true;
   };
 
-  // PUBLIC query function - returns all referral trees with network stats (with password verification)
-  public query func getAllReferralTreesWithPassword(password : Text) : async [{
-    userId : Nat;
-    name : Text;
-    phone : Text;
-    referralCode : Text;
-    isPaid : Bool;
-    directReferrals : Nat;
-    totalNetwork : Nat;
-  }] {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
+  // ========== PUBLIC QUERY (NO AUTH REQUIRED) ==========
 
-    let summaryList = List.empty<{
-      userId : Nat;
-      name : Text;
-      phone : Text;
-      referralCode : Text;
-      isPaid : Bool;
-      directReferrals : Nat;
-      totalNetwork : Nat;
-    }>();
-
-    for ((_, user) in users.entries()) {
-      let directReferrals = findReferrals(user.referralCode).size();
-      let totalNetwork = countNetwork(user.referralCode);
-
-      summaryList.add({
-        userId = user.id;
-        name = user.name;
-        phone = user.phone;
-        referralCode = user.referralCode;
-        isPaid = user.isPaid;
-        directReferrals;
-        totalNetwork;
-      });
-    };
-
-    summaryList.toArray();
-  };
-
-  // Helper: merge Video + VideoExtra into VideoFull
-  func toVideoFull(v : Video) : VideoFull {
-    let extra = switch (videoExtras.get(v.id)) {
-      case (null) { { channelUrl = ""; thumbnailUrl = "" } };
-      case (?e) { e };
-    };
-    {
-      id = v.id;
-      title = v.title;
-      category = v.category;
-      url = v.url;
-      description = v.description;
-      duration = v.duration;
-      createdAt = v.createdAt;
-      channelUrl = extra.channelUrl;
-      thumbnailUrl = extra.thumbnailUrl;
-    };
-  };
-
-  // PUBLIC query function - no authentication required (for admin panel)
-  public query func getAllVideosPublic() : async [VideoFull] {
-    videos.values().toArray().map(toVideoFull);
-  };
-
-  // PUBLIC: get videos by category, no auth required
-  public query func getVideosByCategoryPublic(category : Text) : async [VideoFull] {
-    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) }).map(toVideoFull);
-  };
-
-  // FULLY PUBLIC query function - NO authentication/permission check
-  // Safe for anonymous callers to look up by their own phone number
+  // Fully public - phone-based users connect as anonymous actors
   public query func getUserByPhone(phone : Text) : async ?User {
-    users.values().toArray().find(
-      func(u) {
-        Text.equal(normalizePhone(u.phone), normalizePhone(phone));
-      }
-    );
+    let normalizedPhone = normalizePhone(phone);
+    switch (phoneToUserId.get(normalizedPhone)) {
+      case (null) { null };
+      case (?userId) { users.get(userId) };
+    };
   };
 
-  // PUBLIC function - allows ALL callers (including anonymous) as specified
-  public shared ({ caller }) func register(name : Text, email : Text, phone : Text, referredBy : Text) : async Text {
-    // Check if phone number already exists
+  public query func getAllVideos() : async [Video] {
+    videos.values().toArray();
+  };
+
+  public query func getVideosByCategory(category : Text) : async [Video] {
+    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) });
+  };
+
+  public query func getAllChannelsPublic() : async [UserChannel] {
+    userChannels.values().toArray().sort();
+  };
+
+  public query func getChannelVideos(channelId : Nat) : async [UserVideo] {
+    userVideos.values().toArray().filter(func(v) { v.channelId == channelId });
+  };
+
+  // ========== USER REGISTRATION (ANONYMOUS ALLOWED) ==========
+
+  public shared func registerUser(name : Text, email : Text, phone : Text, referralCode : Text) : async Nat {
     let normalizedPhone = normalizePhone(phone);
-    switch (users.values().toArray().find(func(u) { Text.equal(normalizePhone(u.phone), normalizedPhone) })) {
+
+    // Check for duplicate phone
+    switch (phoneToUserId.get(normalizedPhone)) {
       case (?_) { Runtime.trap("Phone number already registered") };
       case (null) {};
-    };
-
-    // If caller is not anonymous, check principalToUserId as before
-    if (not caller.isAnonymous()) {
-      if (getUserIdFromPrincipal(caller) != null) {
-        Runtime.trap("User already registered");
-      };
     };
 
     let userId = nextUserId;
     nextUserId += 1;
 
-    let referralCode = generateReferralCode(userId);
-
-    let newUser : User = {
+    let user : User = {
       id = userId;
       name;
       email;
-      phone;
-      referralCode;
-      referredBy;
+      phone = normalizedPhone;
+      referralCode = generateReferralCode(userId);
+      referredBy = referralCode;
       walletBalance = 0;
-      isActive = true;
+      isActive = false;
       isPaid = false;
       joinedAt = Time.now();
       role = "user";
     };
 
-    users.add(userId, newUser);
+    users.add(userId, user);
+    phoneToUserId.add(normalizedPhone, userId);
 
-    // Only map principal to userId if caller is not anonymous
-    if (not caller.isAnonymous()) {
-      principalToUserId.add(caller, userId);
-      let profile : UserProfile = {
-        userId;
-        name;
-        email;
-        phone;
-      };
-      userProfiles.add(caller, profile);
-
-      // Directly assign user role in access control system
-      accessControlState.userRoles.add(caller, #user);
-    };
-
-    referralCode;
+    userId;
   };
 
-  // PUBLIC function - no authentication required as specified
-  public shared ({ caller }) func submitPaymentProof(input : PaymentSubmissionInput) : async Nat {
-    let normalizedPhone = normalizePhone(input.phone);
+  // ========== USER FUNCTIONS (PHONE-BASED, NO PRINCIPAL AUTH) ==========
 
-    let userOpt = users.values().toArray().find(
-      func(u) {
-        Text.equal(normalizePhone(u.phone), normalizedPhone);
+  public shared func submitPaymentProof(input : PaymentSubmissionInput) : async Nat {
+    let userOpt = findUserByPhoneInternal(input.phone);
+    let userId = switch (userOpt) {
+      case (null) { Runtime.trap("User not found for this phone number") };
+      case (?user) { user.id };
+    };
+
+    let submissionId = nextPaymentSubmissionId;
+    nextPaymentSubmissionId += 1;
+
+    let submission : PaymentSubmission = {
+      id = submissionId;
+      userId;
+      name = input.name;
+      phone = input.phone;
+      utr = input.utr;
+      amount = input.amount;
+      timestamp = Time.now();
+      status = #pending;
+    };
+
+    paymentSubmissions.add(submissionId, submission);
+    submissionId;
+  };
+
+  public shared func recordWatchByPhone(phone : Text, videoId : Nat, watchedSeconds : Nat, completed : Bool, subscribed : Bool) : async () {
+    let userOpt = findUserByPhoneInternal(phone);
+    switch (userOpt) {
+      case (null) { Runtime.trap("User not found") };
+      case (?user) {
+        let recordId = user.id * 1000000 + videoId;
+        let record : WatchRecord = {
+          userId = user.id;
+          videoId;
+          watchedSeconds;
+          completed;
+          subscribed;
+        };
+        watchRecords.add(recordId, record);
+      };
+    };
+  };
+
+  // Keep old recordWatch for compatibility
+  public shared ({ caller }) func recordWatch(videoId : Nat, watchedSeconds : Nat, completed : Bool, subscribed : Bool) : async () {
+    switch (principalToUserId.get(caller)) {
+      case (null) { /* ignore if principal not registered */ };
+      case (?userId) {
+        let recordId = userId * 1000000 + videoId;
+        let record : WatchRecord = {
+          userId;
+          videoId;
+          watchedSeconds;
+          completed;
+          subscribed;
+        };
+        watchRecords.add(recordId, record);
+      };
+    };
+  };
+
+  public query func getUserWatchTimeByPhone(phone : Text) : async Nat {
+    let normalizedPhone = normalizePhone(phone);
+    switch (phoneToUserId.get(normalizedPhone)) {
+      case (null) { 0 };
+      case (?userId) {
+        var totalSeconds = 0;
+        for (record in watchRecords.values()) {
+          if (record.userId == userId) {
+            totalSeconds += record.watchedSeconds;
+          };
+        };
+        totalSeconds;
+      };
+    };
+  };
+
+  // Keep old getUserWatchTime for compatibility
+  public query ({ caller }) func getUserWatchTime(phone : Text) : async Nat {
+    let normalizedPhone = normalizePhone(phone);
+    switch (phoneToUserId.get(normalizedPhone)) {
+      case (null) { 0 };
+      case (?userId) {
+        var totalSeconds = 0;
+        for (record in watchRecords.values()) {
+          if (record.userId == userId) {
+            totalSeconds += record.watchedSeconds;
+          };
+        };
+        totalSeconds;
+      };
+    };
+  };
+
+  // ========== PHONE-BASED USER CHANNEL FUNCTIONS (NO PRINCIPAL AUTH) ==========
+
+  public shared func createChannelWithPhone(phone : Text, name : Text, description : Text, thumbnailUrl : Text, bannerUrl : Text) : async Nat {
+    let user = switch (findUserByPhoneInternal(phone)) {
+      case (null) { Runtime.trap("User not found for this phone number") };
+      case (?u) { u };
+    };
+
+    let normalizedPhone = normalizePhone(phone);
+
+    var existingChannel = false;
+    for (channel in userChannels.values()) {
+      if (Text.equal(normalizePhone(channel.ownerPhone), normalizedPhone)) {
+        existingChannel := true;
+      };
+    };
+
+    if (existingChannel) {
+      Runtime.trap("Channel already exists for this phone number");
+    };
+
+    let channelId = nextChannelId;
+    nextChannelId += 1;
+
+    let channel : UserChannel = {
+      id = channelId;
+      name;
+      description;
+      ownerPhone = normalizedPhone;
+      thumbnailUrl;
+      bannerUrl;
+      createdAt = Time.now();
+    };
+
+    userChannels.add(channelId, channel);
+    channelId;
+  };
+
+  public query func getMyChannelByPhone(phone : Text) : async ?UserChannel {
+    let normalizedPhone = normalizePhone(phone);
+    userChannels.values().toArray().find(
+      func(c) {
+        Text.equal(normalizePhone(c.ownerPhone), normalizedPhone);
       }
     );
-
-    switch (userOpt) {
-      case (null) {
-        let submission : PaymentSubmission = {
-          id = nextPaymentSubmissionId;
-          userId = 0;
-          name = input.name;
-          phone = input.phone;
-          utr = input.utr;
-          amount = input.amount;
-          timestamp = Time.now();
-          status = #pending;
-        };
-
-        paymentSubmissions.add(nextPaymentSubmissionId, submission);
-        nextPaymentSubmissionId += 1;
-
-        submission.id;
-      };
-      case (?user) {
-        if (user.isPaid) {
-          Runtime.trap("User has already paid");
-        };
-
-        let submission : PaymentSubmission = {
-          id = nextPaymentSubmissionId;
-          userId = user.id;
-          name = input.name;
-          phone = input.phone;
-          utr = input.utr;
-          amount = input.amount;
-          timestamp = Time.now();
-          status = #pending;
-        };
-
-        paymentSubmissions.add(nextPaymentSubmissionId, submission);
-        nextPaymentSubmissionId += 1;
-
-        submission.id;
-      };
-    };
   };
 
-  // USER-ONLY function
-  public query ({ caller }) func getMyPaymentSubmissions() : async [PaymentSubmission] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view payment submissions");
+  public shared func updateChannelWithPhone(phone : Text, channelId : Nat, name : Text, description : Text, thumbnailUrl : Text, bannerUrl : Text) : async () {
+    let normalizedPhone = normalizePhone(phone);
+
+    let channel = switch (userChannels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?c) { c };
     };
 
-    let userId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
+    if (not Text.equal(normalizePhone(channel.ownerPhone), normalizedPhone)) {
+      Runtime.trap("Unauthorized: Only channel owner can update");
     };
 
-    paymentSubmissions.values().toArray().filter(
-      func(s) {
-        s.userId == userId;
-      }
-    ).sort();
+    let updatedChannel = { channel with name; description; thumbnailUrl; bannerUrl };
+    userChannels.add(channelId, updatedChannel);
   };
 
-  // ADMIN-ONLY function
-  public query ({ caller }) func getAllPaymentSubmissions() : async [PaymentSubmission] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can view all payment submissions");
+  public shared func uploadVideoToChannelWithPhone(phone : Text, channelId : Nat, title : Text, url : Text, description : Text, thumbnailUrl : Text, category : Text) : async Nat {
+    let normalizedPhone = normalizePhone(phone);
+
+    let channel = switch (userChannels.get(channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?c) { c };
     };
 
+    if (not Text.equal(normalizePhone(channel.ownerPhone), normalizedPhone)) {
+      Runtime.trap("Unauthorized: Only channel owner can upload");
+    };
+
+    let videoId = nextUserVideoId;
+    nextUserVideoId += 1;
+
+    let video : UserVideo = {
+      id = videoId;
+      channelId;
+      title;
+      url;
+      description;
+      thumbnailUrl;
+      category;
+      ownerPhone = normalizedPhone;
+      status = "published";
+      createdAt = Time.now();
+    };
+
+    userVideos.add(videoId, video);
+    videoId;
+  };
+
+  public shared func deleteChannelVideoWithPhone(phone : Text, videoId : Nat) : async () {
+    let normalizedPhone = normalizePhone(phone);
+
+    let video = switch (userVideos.get(videoId)) {
+      case (null) { Runtime.trap("Video not found") };
+      case (?v) { v };
+    };
+
+    let channel = switch (userChannels.get(video.channelId)) {
+      case (null) { Runtime.trap("Channel not found") };
+      case (?c) { c };
+    };
+
+    if (not Text.equal(normalizePhone(channel.ownerPhone), normalizedPhone)) {
+      Runtime.trap("Unauthorized: Only channel owner can delete");
+    };
+
+    userVideos.remove(videoId);
+  };
+
+  // ========== PASSWORD-GATED ADMIN FUNCTIONS (PASSWORD ONLY, NO PRINCIPAL CHECK) ==========
+
+  public query func getAllUsersWithPassword(password : Text) : async [User] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+    users.values().toArray();
+  };
+
+  public query func getAllPaymentSubmissionsWithPassword(password : Text) : async [PaymentSubmission] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
     paymentSubmissions.values().toArray().sort();
   };
 
-  // ADMIN-ONLY function
-  public shared ({ caller }) func verifyPaymentSubmission(submissionId : Nat, action : Text) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can verify payment submissions");
+  public shared func verifyPaymentSubmissionWithPassword(password : Text, submissionId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
     let submission = switch (paymentSubmissions.get(submissionId)) {
@@ -524,640 +683,273 @@ actor {
       case (?s) { s };
     };
 
-    switch (action) {
-      case ("approve") {
-        let user = switch (users.get(submission.userId)) {
-          case (null) { Runtime.trap("User not found") };
-          case (?u) { u };
-        };
+    // Find user by phone from submission
+    let userOpt = switch (findUserByPhoneInternal(submission.phone)) {
+      case (null) {
+        // Fallback: try by userId
+        users.get(submission.userId);
+      };
+      case (?u) { ?u };
+    };
 
-        if (user.isPaid) {
-          Runtime.trap("User already paid");
-        };
+    let user = switch (userOpt) {
+      case (null) { Runtime.trap("User not found for this payment") };
+      case (?u) { u };
+    };
 
-        let updatedUser = { user with isPaid = true; walletBalance = user.walletBalance + 15000 };
-        users.add(submission.userId, updatedUser);
+    let updatedUser = {
+      user with
+      isPaid = true;
+      isActive = true;
+      walletBalance = user.walletBalance + joiningBonus;
+    };
+    users.add(user.id, updatedUser);
 
-        let updatedSubmission = { submission with status = #approved };
-        paymentSubmissions.add(submissionId, updatedSubmission);
+    let updatedSubmission = { submission with status = #approved };
+    paymentSubmissions.add(submissionId, updatedSubmission);
 
-        let bonusTxn : Transaction = {
-          id = nextTransactionId;
-          userId = submission.userId;
-          amount = 15000;
-          txType = "joining_bonus";
-          note = "Joining bonus";
-          timestamp = Time.now();
-        };
-        transactions.add(nextTransactionId, bonusTxn);
-        nextTransactionId += 1;
+    distributeReferralEarnings(user.id);
+  };
 
-        var currentReferralCode = user.referredBy;
-        var level = 1;
-        let levelEarnings = [1000, 500, 400, 300, 200, 100, 50, 25, 25, 25, 25, 25, 25, 25, 25];
+  public shared func rejectPaymentSubmissionWithPassword(password : Text, submissionId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
 
-        while (level <= 15 and not Text.equal(currentReferralCode, "")) {
-          let referrerOpt = users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) });
+    let submission = switch (paymentSubmissions.get(submissionId)) {
+      case (null) { Runtime.trap("Payment submission not found") };
+      case (?s) { s };
+    };
 
-          switch (referrerOpt) {
-            case (null) { level := 16 };
-            case (?referrer) {
-              let referralCount = findReferrals(referrer.referralCode).size();
+    let updatedSubmission = { submission with status = #rejected };
+    paymentSubmissions.add(submissionId, updatedSubmission);
+  };
 
-              if (referrer.isPaid and referralCount >= 3) {
-                let earning = levelEarnings[level - 1];
-                let updatedReferrer = { referrer with walletBalance = referrer.walletBalance + earning };
-                users.add(referrer.id, updatedReferrer);
+  public shared func deletePaymentSubmissionWithPassword(password : Text, submissionId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
 
-                let earnTxn : Transaction = {
-                  id = nextTransactionId;
-                  userId = referrer.id;
-                  amount = earning;
-                  txType = "level_earning";
-                  note = "Level " # level.toText() # " earning from user " # submission.userId.toText();
-                  timestamp = Time.now();
-                };
-                transactions.add(nextTransactionId, earnTxn);
-                nextTransactionId += 1;
-              };
+    paymentSubmissions.remove(submissionId);
+  };
 
-              currentReferralCode := referrer.referredBy;
-              level += 1;
-            };
+  public shared func addVideoWithPassword(password : Text, title : Text, category : Text, url : Text, description : Text, duration : Nat, channelUrl : Text, thumbnailUrl : Text) : async Nat {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    let videoId = nextVideoId;
+    nextVideoId += 1;
+
+    let video : Video = {
+      id = videoId;
+      title;
+      category;
+      url;
+      description;
+      duration;
+      createdAt = Time.now();
+      channelUrl;
+      thumbnailUrl;
+    };
+
+    videos.add(videoId, video);
+    videoId;
+  };
+
+  public shared func deleteVideoWithPassword(password : Text, videoId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    videos.remove(videoId);
+  };
+
+  public shared func editUserWithPassword(password : Text, userId : Nat, name : Text, email : Text, phone : Text) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    let user = switch (users.get(userId)) {
+      case (null) { Runtime.trap("User not found") };
+      case (?u) { u };
+    };
+
+    let normalizedPhone = normalizePhone(phone);
+    let oldNormalizedPhone = normalizePhone(user.phone);
+
+    if (not Text.equal(normalizedPhone, oldNormalizedPhone)) {
+      switch (phoneToUserId.get(normalizedPhone)) {
+        case (?existingUserId) {
+          if (existingUserId != userId) {
+            Runtime.trap("Phone number already in use");
           };
         };
+        case (null) {};
       };
-      case ("reject") {
-        let updatedSubmission = { submission with status = #rejected };
-        paymentSubmissions.add(submissionId, updatedSubmission);
-      };
-      case (_) {
-        Runtime.trap("Invalid action");
-      };
+
+      phoneToUserId.remove(oldNormalizedPhone);
+      phoneToUserId.add(normalizedPhone, userId);
     };
+
+    let updatedUser = { user with name; email; phone = normalizedPhone };
+    users.add(userId, updatedUser);
   };
 
-  // USER-ONLY function - users can only view their own profile
-  public query ({ caller }) func getMyProfile(userId : Nat) : async User {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view profiles");
+  public shared func deleteUserWithPassword(password : Text, userId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    // Users can only view their own profile, admins can view any
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
-
-    switch (users.get(userId)) {
+    let user = switch (users.get(userId)) {
       case (null) { Runtime.trap("User not found") };
-      case (?user) { user };
+      case (?u) { u };
     };
+
+    let normalizedPhone = normalizePhone(user.phone);
+    phoneToUserId.remove(normalizedPhone);
+    users.remove(userId);
   };
 
-  // USER-ONLY function - users can only view their own tree
-  public query ({ caller }) func getReferralTree(userId : Nat) : async ReferralNode {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view referral tree");
-    };
-
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    // Users can only view their own tree, admins can view any
-    if (callerUserId != userId and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own referral tree");
+  public query func getReferralTreeWithPassword(password : Text, userId : Nat) : async ReferralNode {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
     buildReferralTree(userId, 0);
   };
 
-  // USER-ONLY function - only paid members or admin
-  public query ({ caller }) func getAllVideos() : async [VideoFull] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view videos");
+  public query func getAllUsersWatchTimeWithPassword(password : Text) : async [{ userId : Nat; phone : Text; name : Text; totalSeconds : Nat }] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    let user = switch (users.get(callerUserId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    if (not user.isPaid and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only paid members can view videos");
-    };
-
-    videos.values().toArray().map(toVideoFull);
+    users.values().toArray().map(
+      func(user : User) : { userId : Nat; phone : Text; name : Text; totalSeconds : Nat } {
+        var totalSeconds = 0;
+        for (record in watchRecords.values()) {
+          if (record.userId == user.id) {
+            totalSeconds += record.watchedSeconds;
+          };
+        };
+        { userId = user.id; phone = user.phone; name = user.name; totalSeconds };
+      }
+    );
   };
 
-  // USER-ONLY function - only paid members or admin
-  public query ({ caller }) func getVideosByCategory(category : Text) : async [VideoFull] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view videos");
+  public query func getAllChannelsWithPassword(password : Text) : async [UserChannel] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
-
-    let callerUserId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    let user = switch (users.get(callerUserId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    if (not user.isPaid and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Only paid members can view videos");
-    };
-
-    videos.values().toArray().filter(func(v) { Text.equal(v.category, category) }).map(toVideoFull);
+    userChannels.values().toArray().sort();
   };
 
-  // USER-ONLY function - only paid members
-  public shared ({ caller }) func recordWatchProgress(videoId : Nat, watchedSeconds : Nat, subscribed : Bool) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can record watch progress");
+  public query func getAllUserVideosWithPassword(password : Text) : async [UserVideo] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
-
-    let userId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    if (not user.isPaid) {
-      Runtime.trap("Unauthorized: Only paid members can watch videos");
-    };
-
-    let video = switch (videos.get(videoId)) {
-      case (null) { Runtime.trap("Video not found") };
-      case (?v) { v };
-    };
-
-    let record : WatchRecord = {
-      userId;
-      videoId;
-      watchedSeconds;
-      completed = watchedSeconds >= video.duration;
-      subscribed;
-    };
-    let watchRecordId = userId * 100000 + videoId;
-    watchRecords.add(watchRecordId, record);
+    userVideos.values().toArray();
   };
 
-  // USER-ONLY function
-  public query ({ caller }) func getMyWatchHistory() : async [WatchRecord] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view watch history");
+  public shared func deleteChannelWithPassword(password : Text, channelId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
-    let userId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
+    if (not userChannels.containsKey(channelId)) {
+      Runtime.trap("Channel does not exist");
     };
+    userChannels.remove(channelId);
 
-    watchRecords.values().toArray().filter(func(w) { w.userId == userId });
+    for ((id, video) in userVideos.entries()) {
+      if (video.channelId == channelId) {
+        userVideos.remove(id);
+      };
+    };
   };
 
-  // USER-ONLY function
-  public query ({ caller }) func getTransactions() : async [Transaction] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view transactions");
+  public shared func deleteUserVideoWithPassword(password : Text, videoId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
 
-    let userId = switch (getUserIdFromPrincipal(caller)) {
-      case (null) { Runtime.trap("Caller not registered") };
-      case (?id) { id };
+    if (not userVideos.containsKey(videoId)) {
+      Runtime.trap("Video does not exist");
     };
-
-    transactions.values().toArray().filter(func(t) { t.userId == userId }).sort();
+    userVideos.remove(videoId);
   };
 
-  // USER-ONLY function
+  // ========== ADMIN CHANNEL LINKS MANAGEMENT ==========
+
+  public shared func addChannelWithPassword(password : Text, name : Text, url : Text) : async Nat {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    let channelLinkId = nextChannelLinkId;
+    nextChannelLinkId += 1;
+
+    let channelLink : ChannelLink = {
+      id = channelLinkId;
+      name;
+      url;
+      createdAt = Time.now();
+    };
+
+    channelLinks.add(channelLinkId, channelLink);
+    channelLinkId;
+  };
+
+  public shared func deleteChannelWithPasswordById(password : Text, channelId : Nat) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    channelLinks.remove(channelId);
+  };
+
+  public query func getAllChannelsListWithPassword(password : Text) : async [ChannelLink] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+
+    channelLinks.values().toArray();
+  };
+
+  // ========== USER PROFILE FUNCTIONS ==========
+
   public query ({ caller }) func getCallerUserProfile() : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view profiles");
-    };
     userProfiles.get(caller);
   };
 
-  // USER-ONLY function - can view own profile or admin can view any
   public query ({ caller }) func getUserProfile(user : Principal) : async ?UserProfile {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can view profiles");
-    };
-
-    if (caller != user and not AccessControl.isAdmin(accessControlState, caller)) {
-      Runtime.trap("Unauthorized: Can only view your own profile");
-    };
     userProfiles.get(user);
   };
 
-  // USER-ONLY function
   public shared ({ caller }) func saveCallerUserProfile(profile : UserProfile) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #user))) {
-      Runtime.trap("Unauthorized: Only users can save profiles");
-    };
     userProfiles.add(caller, profile);
   };
+  // ========== JOINING BONUS MANAGEMENT ==========
 
-  // ADMIN-ONLY function
-  public query ({ caller }) func getAllUsers() : async [User] {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-    users.values().toArray();
+  public query func getJoiningBonus() : async Nat {
+    joiningBonus;
   };
 
-  // ADMIN-ONLY function
-  public shared ({ caller }) func updateUserStatus(userId : Nat, isActive : Bool) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    let updatedUser = { user with isActive };
-    users.add(userId, updatedUser);
-  };
-
-  // ADMIN-ONLY function
-  public shared ({ caller }) func updateUser(userId : Nat, name : Text, email : Text, phone : Text, isActive : Bool) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    let updatedUser = { user with name; email; phone; isActive };
-    users.add(userId, updatedUser);
-  };
-
-  // ADMIN-ONLY function
-  public shared ({ caller }) func deleteUser(userId : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    // Remove user from users map
-    users.remove(userId);
-
-    // Remove from principalToUserId map
-    for ((principal, uid) in principalToUserId.entries()) {
-      if (uid == userId) {
-        principalToUserId.remove(principal);
-      };
-    };
-
-    // Remove from userProfiles map
-    for ((principal, profile) in userProfiles.entries()) {
-      if (profile.userId == userId) {
-        userProfiles.remove(principal);
-      };
-    };
-
-    // Remove all payment submissions for this user
-    for ((id, submission) in paymentSubmissions.entries()) {
-      if (submission.userId == userId) {
-        paymentSubmissions.remove(id);
-      };
-    };
-  };
-
-  // ADMIN-ONLY function
-  public shared ({ caller }) func addVideo(title : Text, category : Text, url : Text, description : Text, duration : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-
-    let videoId = nextVideoId;
-    nextVideoId += 1;
-
-    let video : Video = {
-      id = videoId;
-      title;
-      category;
-      url;
-      description;
-      duration;
-      createdAt = Time.now();
-    };
-
-    videos.add(videoId, video);
-  };
-
-  // ADMIN-ONLY function
-  public shared ({ caller }) func deleteVideo(videoId : Nat) : async () {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can perform this action");
-    };
-
-    if (not videos.containsKey(videoId)) {
-      Runtime.trap("Video not found");
-    };
-
-    videos.remove(videoId);
-  };
-
-  // PUBLIC function - allows first authenticated caller to claim admin
-  public shared ({ caller }) func claimFirstAdmin() : async () {
-    if (caller.isAnonymous()) {
-      Runtime.trap("Unauthorized: Must be authenticated to claim admin");
-    };
-    if (adminAssigned) {
-      Runtime.trap("An admin has already been assigned");
-    };
-
-    // Directly add admin role to accessControlState.userRoles bypassing assignRole
-    accessControlState.userRoles.add(caller, #admin);
-    adminAssigned := true;
-    accessControlState.adminAssigned := true;
-  };
-
-  // PUBLIC query function - no authentication required
-  public query func isAdminAssigned() : async Bool {
-    adminAssigned;
-  };
-
-  // ADMIN-ONLY function - only existing admins can assign new admins
-  public shared ({ caller }) func forceSetAdmin(principalText : Text) : async Text {
-    if (not (AccessControl.hasPermission(accessControlState, caller, #admin))) {
-      Runtime.trap("Unauthorized: Only admins can assign admin roles");
-    };
-
-    let newAdmin = Principal.fromText(principalText);
-    accessControlState.userRoles.add(newAdmin, #admin);
-    adminAssigned := true;
-    accessControlState.adminAssigned := true;
-    "OK";
-  };
-
-  // ========== PASSWORD-GATED ADMIN FUNCTIONS ==========
-  // These functions allow password-based access for admin panel (including anonymous callers)
-
-  // PASSWORD-GATED function - returns all users if password is correct
-  public query func getAllUsersWithPassword(password : Text) : async [User] {
+  public shared func setJoiningBonusWithPassword(password : Text, amount : Nat) : async () {
     if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
+      Runtime.trap("Unauthorized: Invalid admin password");
     };
-    users.values().toArray();
+    joiningBonus := amount;
   };
 
-  // PASSWORD-GATED function - returns all payment submissions if password is correct
-  public query func getAllPaymentSubmissionsWithPassword(password : Text) : async [PaymentSubmission] {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-    paymentSubmissions.values().toArray().sort();
-  };
+  // ========== PUBLIC REFERRAL TREE (for user dashboard) ==========
 
-  // PASSWORD-GATED function - verifies payment submission with password authentication
-  public shared func verifyPaymentSubmissionWithPassword(password : Text, submissionId : Nat, action : Text) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    let submission = switch (paymentSubmissions.get(submissionId)) {
-      case (null) { Runtime.trap("Payment submission not found") };
-      case (?s) { s };
-    };
-
-    switch (action) {
-      case ("approve") {
-        // Look up user: first try by userId, then by phone if userId is 0
-        var userOpt : ?User = users.get(submission.userId);
-
-        if (submission.userId == 0 or userOpt == null) {
-          let normalizedPhone = normalizePhone(submission.phone);
-          userOpt := users.values().toArray().find(
-            func(u) {
-              Text.equal(normalizePhone(u.phone), normalizedPhone);
-            }
-          );
-        };
-
-        let user = switch (userOpt) {
-          case (null) { Runtime.trap("User not found for this payment") };
-          case (?u) { u };
-        };
-
-        if (user.isPaid) {
-          Runtime.trap("User already paid");
-        };
-
-        let updatedUser = { user with isPaid = true; walletBalance = user.walletBalance + 15000 };
-        users.add(user.id, updatedUser);
-
-        let updatedSubmission = { submission with status = #approved; userId = user.id };
-        paymentSubmissions.add(submissionId, updatedSubmission);
-
-        let bonusTxn : Transaction = {
-          id = nextTransactionId;
-          userId = user.id;
-          amount = 15000;
-          txType = "joining_bonus";
-          note = "Joining bonus";
-          timestamp = Time.now();
-        };
-        transactions.add(nextTransactionId, bonusTxn);
-        nextTransactionId += 1;
-
-        var currentReferralCode = user.referredBy;
-        var level = 1;
-        let levelEarnings = [1000, 500, 400, 300, 200, 100, 50, 25, 25, 25, 25, 25, 25, 25, 25];
-
-        while (level <= 15 and not Text.equal(currentReferralCode, "")) {
-          let referrerOpt = users.values().toArray().find(func(u) { Text.equal(u.referralCode, currentReferralCode) });
-
-          switch (referrerOpt) {
-            case (null) { level := 16 };
-            case (?referrer) {
-              let referralCount = findReferrals(referrer.referralCode).size();
-
-              if (referrer.isPaid and referralCount >= 3) {
-                let earning = levelEarnings[level - 1];
-                let updatedReferrer = { referrer with walletBalance = referrer.walletBalance + earning };
-                users.add(referrer.id, updatedReferrer);
-
-                let earnTxn : Transaction = {
-                  id = nextTransactionId;
-                  userId = referrer.id;
-                  amount = earning;
-                  txType = "level_earning";
-                  note = "Level " # level.toText() # " earning from user " # user.id.toText();
-                  timestamp = Time.now();
-                };
-                transactions.add(nextTransactionId, earnTxn);
-                nextTransactionId += 1;
-              };
-
-              currentReferralCode := referrer.referredBy;
-              level += 1;
-            };
-          };
-        };
-      };
-      case ("reject") {
-        let updatedSubmission = { submission with status = #rejected };
-        paymentSubmissions.add(submissionId, updatedSubmission);
-      };
-      case (_) {
-        Runtime.trap("Invalid action");
-      };
+  public query func getReferralTreeByUserId(userId : Nat) : async ?ReferralNode {
+    switch (users.get(userId)) {
+      case (null) { null };
+      case (?_) { ?buildReferralTree(userId, 0) };
     };
   };
 
-  // PASSWORD-GATED function - updates user with password authentication
-  public shared func updateUserWithPassword(password : Text, userId : Nat, name : Text, email : Text, phone : Text, isActive : Bool) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
 
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    let updatedUser = { user with name; email; phone; isActive };
-    users.add(userId, updatedUser);
-  };
-
-  // PASSWORD-GATED function - deletes user with password authentication
-  public shared func deleteUserWithPassword(password : Text, userId : Nat) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    // Remove user from users map
-    users.remove(userId);
-
-    // Remove from principalToUserId map
-    for ((principal, uid) in principalToUserId.entries()) {
-      if (uid == userId) {
-        principalToUserId.remove(principal);
-      };
-    };
-
-    // Remove from userProfiles map
-    for ((principal, profile) in userProfiles.entries()) {
-      if (profile.userId == userId) {
-        userProfiles.remove(principal);
-      };
-    };
-
-    // Remove all payment submissions for this user
-    for ((id, submission) in paymentSubmissions.entries()) {
-      if (submission.userId == userId) {
-        paymentSubmissions.remove(id);
-      };
-    };
-  };
-
-  // PASSWORD-GATED function - adds video with password authentication
-  public shared func addVideoWithPassword(password : Text, title : Text, category : Text, url : Text, description : Text, duration : Nat, channelUrl : Text, thumbnailUrl : Text) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    let videoId = nextVideoId;
-    nextVideoId += 1;
-
-    let video : Video = {
-      id = videoId;
-      title;
-      category;
-      url;
-      description;
-      duration;
-      createdAt = Time.now();
-    };
-
-    videos.add(videoId, video);
-    videoExtras.add(videoId, { channelUrl; thumbnailUrl });
-  };
-
-  // PASSWORD-GATED function - updates video channel/thumbnail URLs
-  public shared func updateVideoChannelInfoWithPassword(password : Text, videoId : Nat, channelUrl : Text, thumbnailUrl : Text) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    if (not videos.containsKey(videoId)) {
-      Runtime.trap("Video not found");
-    };
-    videoExtras.add(videoId, { channelUrl; thumbnailUrl });
-  };
-
-  // PASSWORD-GATED function - deletes video with password authentication
-  public shared func deleteVideoWithPassword(password : Text, videoId : Nat) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    if (not videos.containsKey(videoId)) {
-      Runtime.trap("Video not found");
-    };
-
-    videos.remove(videoId);
-    videoExtras.remove(videoId);
-  };
-
-  // PASSWORD-GATED function - updates user status with password authentication
-  public shared func updateUserStatusWithPassword(password : Text, userId : Nat, isActive : Bool) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    let user = switch (users.get(userId)) {
-      case (null) { Runtime.trap("User not found") };
-      case (?u) { u };
-    };
-
-    let updatedUser = { user with isActive };
-    users.add(userId, updatedUser);
-  };
-
-  // PASSWORD-GATED function - deletes payment submission with password authentication
-  public shared func deletePaymentSubmissionWithPassword(password : Text, submissionId : Nat) : async () {
-    if (not verifyPassword(password)) {
-      Runtime.trap("Unauthorized: Invalid password");
-    };
-
-    if (not paymentSubmissions.containsKey(submissionId)) {
-      Runtime.trap("Payment submission not found");
-    };
-
-    paymentSubmissions.remove(submissionId);
-  };
 };
