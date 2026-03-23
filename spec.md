@@ -1,28 +1,30 @@
 # Tm11primeTime
 
 ## Current State
-Full-featured matrix referral platform with phone-based login, UPI payments, 15-level matrix tree, video library, and admin panel. Stable storage persists data across upgrades. Login flow checks phone → logs in if registered → shows registration form for new users.
+Full-stack ICP app with Motoko backend (stable storage, all user/payment/video/channel data persisted) and React frontend. Backend has all required functions: phone-based auth, referral matrix, payments, videos, channels, withdrawals, watch time.
 
 ## Requested Changes (Diff)
 
 ### Add
-- `joiningBonus` stable variable in backend (default 150), with `getJoiningBonus()` query and `setJoiningBonusWithPassword(password, amount)` admin function
-- `referredByCode` field in `ReferralNode` type (the referrer's referral code/ID)
-- Admin panel UI field to view/edit joining bonus amount (in a Settings section or at top of Payments tab)
-- Watch time fetched from backend via `getUserWatchTimeByPhone` and displayed as minutes in dashboard stat card
+- Nothing new; this is a rebuild/redeploy of the existing full feature set
 
 ### Modify
-- `verifyPaymentSubmissionWithPassword`: use `joiningBonus` variable instead of hardcoded 150
-- `buildReferralTree`: populate `referredByCode` for each node
-- Matrix tree nodes: show referrer's referral ID (referredByCode) below user name
-- Dashboard watch time stat: query from backend `getUserWatchTimeByPhone`, display as "X min" or "Xh Ym"
-- Login flow: make actor initialization more robust; ensure registered phone always logs in directly
+- Ensure all existing features are properly wired and working
 
 ### Remove
-- Watch time reading from localStorage in DashboardPage (replace with backend query)
+- Nothing
 
 ## Implementation Plan
-1. Update Motoko backend: add `joiningBonus` stable var, `getJoiningBonus` query, `setJoiningBonusWithPassword` update, add `referredByCode` to ReferralNode, update buildReferralTree and verifyPaymentSubmissionWithPassword
-2. Update frontend login flow (RegisterPage): ensure phone check always runs with fresh actor and properly routes to dashboard
-3. Update DashboardPage: fetch watch time from backend, display in minutes; update matrix node to show referredByCode below name
-4. Update AdminPage: add editable joining bonus field in Payments/Settings area
+
+1. Rebuild frontend with all existing pages: LandingPage, RegisterPage, DashboardPage, WalletPage, VideosPage, VideoPlayerPage, ChannelsPage, AdminPage, MyChannelTab, Layout
+2. Ensure login uses single shared anonymous backend actor created before app renders
+3. Phone normalization: strip +91/91 prefix, try all formats
+4. Auto-login if phone stored in localStorage
+5. Matrix tree: 3 fixed slots per level, shows name, phone, referrer name, referredBy referral ID, auto-refreshes every 20s
+6. Payment flow: UPI QR, UTR entry, amount locked at Rs.118
+7. Video library: public access, channel links, thumbnails from backend
+8. Admin panel: password aakbn@1014, all tabs (Users, Payments, Videos, Channels, Matrix, User Channels, Withdrawals)
+9. Auto-approval toggle in admin payments tab
+10. Wallet page: withdrawal button when balance >= 500, document upload
+11. Watch time tracked in backend, displayed in dashboard and admin
+12. Joining bonus editable from admin (default Rs.150)

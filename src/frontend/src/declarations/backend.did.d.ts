@@ -180,6 +180,20 @@ export interface _SERVICE {
     [string, bigint],
     undefined
   >,
+  'getJoiningBonus' : ActorMethod<[], bigint>,
+  'setJoiningBonusWithPassword' : ActorMethod<[string, bigint], undefined>,
+  'submitWithdrawalRequest' : ActorMethod<[string, string, bigint, string], bigint>,
+  'getWithdrawalRequestsWithPassword' : ActorMethod<[string], Array<{
+    id: bigint,
+    userId: bigint,
+    phone: string,
+    upiId: string,
+    amount: bigint,
+    documentUrl: string,
+    status: string,
+    timestamp: bigint,
+  }>>,
+  'updateWithdrawalStatusWithPassword' : ActorMethod<[string, bigint, string], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

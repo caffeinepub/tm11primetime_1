@@ -19,10 +19,12 @@ import {
   Gift,
   TrendingDown,
   TrendingUp,
+  Upload,
   Wallet,
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useState } from "react";
+import { getActorWithRetry } from "../globalActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 import type { Transaction } from "../hooks/useQueries";
 import { useUserByPhone } from "../hooks/useQueries";
@@ -132,11 +134,15 @@ export default function WalletPage() {
   const { data: userProfile } = useUserByPhone(phoneAuth.phone);
 
   const walletBalance = userProfile?.walletBalance ?? BigInt(0);
-  const walletRs = Number(walletBalance) / 100;
+  const walletRs = Number(walletBalance); // Backend stores rupees directly
 
   const [showWithdrawForm, setShowWithdrawForm] = useState(false);
   const [withdrawUpi, setWithdrawUpi] = useState("");
   const [withdrawSubmitted, setWithdrawSubmitted] = useState(false);
+  const [withdrawDoc, setWithdrawDoc] = useState<string>("");
+  const [withdrawDocName, setWithdrawDocName] = useState<string>("");
+  const [withdrawSubmitting, setWithdrawSubmitting] = useState(false);
+  const [withdrawError, setWithdrawError] = useState<string>("");
   const canWithdraw = walletRs >= 500;
 
   // Transactions are principal-gated and not available for phone-based users.
@@ -271,19 +277,80 @@ export default function WalletPage() {
                       className="w-full bg-muted/30 border border-border rounded-xl px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary"
                     />
                   </div>
+                  <div>
+                    <label
+                      htmlFor="withdraw-doc"
+                      className="text-xs text-muted-foreground font-ui mb-1 block"
+                    >
+                      ID Document (Aadhar / PAN) for verification
+                    </label>
+                    <label
+                      htmlFor="withdraw-doc"
+                      className="flex items-center gap-2 w-full bg-muted/30 border border-border rounded-xl px-4 py-2 text-sm text-muted-foreground cursor-pointer hover:border-primary transition-colors"
+                    >
+                      <Upload className="w-4 h-4 flex-shrink-0" />
+                      <span className="truncate">
+                        {withdrawDocName || "Tap to upload document image"}
+                      </span>
+                    </label>
+                    <input
+                      type="file"
+                      id="withdraw-doc"
+                      accept="image/*,application/pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (!file) return;
+                        setWithdrawDocName(file.name);
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setWithdrawDoc((ev.target?.result as string) ?? "");
+                        };
+                        reader.readAsDataURL(file);
+                      }}
+                    />
+                    {withdrawDoc && (
+                      <p className="text-xs text-green-400 mt-1">
+                        ✓ Document ready to upload
+                      </p>
+                    )}
+                  </div>
+                  {withdrawError && (
+                    <p className="text-xs text-red-400">{withdrawError}</p>
+                  )}
                   <div className="flex gap-2">
                     <button
-                      onClick={() => {
-                        if (withdrawUpi.trim()) {
+                      onClick={async () => {
+                        if (!withdrawUpi.trim() || !withdrawDoc) return;
+                        setWithdrawSubmitting(true);
+                        setWithdrawError("");
+                        try {
+                          const actor = await getActorWithRetry();
+                          await (actor as any).submitWithdrawalRequest(
+                            phoneAuth.phone,
+                            withdrawUpi.trim(),
+                            BigInt(walletRs),
+                            withdrawDoc,
+                          );
                           setWithdrawSubmitted(true);
                           setShowWithdrawForm(false);
+                        } catch (_e) {
+                          setWithdrawError(
+                            "Failed to submit. Please try again.",
+                          );
+                        } finally {
+                          setWithdrawSubmitting(false);
                         }
                       }}
-                      disabled={!withdrawUpi.trim()}
+                      disabled={
+                        !withdrawUpi.trim() ||
+                        !withdrawDoc ||
+                        withdrawSubmitting
+                      }
                       type="button"
                       className="flex-1 px-4 py-2 rounded-xl bg-green-500/20 text-green-300 border border-green-500/30 text-sm font-ui font-semibold hover:bg-green-500/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                     >
-                      Submit Request
+                      {withdrawSubmitting ? "Submitting..." : "Submit Request"}
                     </button>
                     <button
                       onClick={() => setShowWithdrawForm(false)}

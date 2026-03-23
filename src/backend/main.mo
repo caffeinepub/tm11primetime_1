@@ -144,6 +144,17 @@ actor {
     url : Text;
     createdAt : Int;
   };
+  type WithdrawalRequest = {
+    id : Nat;
+    userId : Nat;
+    phone : Text;
+    upiId : Text;
+    amount : Nat;
+    documentUrl : Text;
+    status : Text;
+    timestamp : Int;
+  };
+
 
   // ─── Stable counters (persist across upgrades) ───────────────────────────
   stable var nextUserId = 1;
@@ -155,6 +166,8 @@ actor {
   stable var nextChannelId = 1;
   stable var nextUserVideoId = 1;
   stable var nextChannelLinkId = 1;
+  stable var nextWithdrawalRequestId = 1;
+  stable var withdrawalRequestsStable : [WithdrawalRequest] = [];
 
   // ─── Stable storage arrays (persist across upgrades) ─────────────────────
   stable var usersStable : [User] = [];
@@ -178,6 +191,7 @@ actor {
   let userVideos = Map.empty<Nat, UserVideo>();
   let phoneToUserId = Map.empty<Text, Nat>();
   let channelLinks = Map.empty<Nat, ChannelLink>();
+  let withdrawalRequests = Map.empty<Nat, WithdrawalRequest>();
 
   // ─── Restore state from stable arrays on canister start/upgrade ──────────
   private func restoreState() {
@@ -206,6 +220,9 @@ actor {
     for (cl in channelLinksStable.vals()) {
       channelLinks.add(cl.id, cl);
     };
+    for (wr in withdrawalRequestsStable.vals()) {
+      withdrawalRequests.add(wr.id, wr);
+    };
   };
 
   // Run restore on canister init/upgrade
@@ -221,6 +238,7 @@ actor {
     userChannelsStable := userChannels.values().toArray();
     userVideosStable := userVideos.values().toArray();
     channelLinksStable := channelLinks.values().toArray();
+    withdrawalRequestsStable := withdrawalRequests.values().toArray();
   };
 
   system func postupgrade() {
@@ -233,6 +251,7 @@ actor {
     userChannelsStable := [];
     userVideosStable := [];
     channelLinksStable := [];
+    withdrawalRequestsStable := [];
   };
 
   module Transaction {
@@ -948,6 +967,63 @@ actor {
     switch (users.get(userId)) {
       case (null) { null };
       case (?_) { ?buildReferralTree(userId, 0) };
+    };
+  };
+
+
+
+  // ========== WITHDRAWAL REQUESTS ==========
+
+  public shared func submitWithdrawalRequest(phone : Text, upiId : Text, amount : Nat, documentUrl : Text) : async Nat {
+    let userOpt = findUserByPhoneInternal(phone);
+    let userId = switch (userOpt) {
+      case (null) { Runtime.trap("User not found") };
+      case (?user) { user.id };
+    };
+
+    let wrId = nextWithdrawalRequestId;
+    nextWithdrawalRequestId += 1;
+
+    let wr : WithdrawalRequest = {
+      id = wrId;
+      userId;
+      phone;
+      upiId;
+      amount;
+      documentUrl;
+      status = "pending";
+      timestamp = Time.now();
+    };
+    withdrawalRequests.add(wrId, wr);
+    wrId;
+  };
+
+  public query func getWithdrawalRequestsWithPassword(password : Text) : async [WithdrawalRequest] {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+    withdrawalRequests.values().toArray();
+  };
+
+  public shared func updateWithdrawalStatusWithPassword(password : Text, wrId : Nat, newStatus : Text) : async () {
+    if (not verifyPassword(password)) {
+      Runtime.trap("Unauthorized: Invalid admin password");
+    };
+    switch (withdrawalRequests.get(wrId)) {
+      case (null) { Runtime.trap("Withdrawal request not found") };
+      case (?wr) {
+        let updated : WithdrawalRequest = {
+          id = wr.id;
+          userId = wr.userId;
+          phone = wr.phone;
+          upiId = wr.upiId;
+          amount = wr.amount;
+          documentUrl = wr.documentUrl;
+          status = newStatus;
+          timestamp = wr.timestamp;
+        };
+        withdrawalRequests.add(wrId, updated);
+      };
     };
   };
 

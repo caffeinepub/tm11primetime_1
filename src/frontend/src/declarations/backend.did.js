@@ -469,6 +469,24 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
+    'getJoiningBonus' : IDL.Func([], [IDL.Nat], ['query']),
+    'setJoiningBonusWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
+    'submitWithdrawalRequest' : IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Text], [IDL.Nat], []),
+    'getWithdrawalRequestsWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(IDL.Record({
+          'id' : IDL.Nat,
+          'userId' : IDL.Nat,
+          'phone' : IDL.Text,
+          'upiId' : IDL.Text,
+          'amount' : IDL.Nat,
+          'documentUrl' : IDL.Text,
+          'status' : IDL.Text,
+          'timestamp' : IDL.Int,
+        }))],
+        ['query'],
+      ),
+    'updateWithdrawalStatusWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text], [], []),
   });
 };
 

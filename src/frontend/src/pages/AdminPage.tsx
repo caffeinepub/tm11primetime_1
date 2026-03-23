@@ -45,10 +45,12 @@ import { Textarea } from "@/components/ui/textarea";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AlertCircle,
+  Banknote,
   BarChart3,
   CheckCircle,
   Crown,
   ExternalLink,
+  FileText,
   IndianRupee,
   Link as LinkIcon,
   Loader2,
@@ -705,6 +707,49 @@ export default function AdminPage() {
   const [joiningBonus, setJoiningBonus] = useState<number>(150);
   const [joiningBonusInput, setJoiningBonusInput] = useState<string>("150");
   const [savingBonus, setSavingBonus] = useState(false);
+  const [withdrawalRequests, setWithdrawalRequests] = useState<
+    Array<{
+      id: bigint;
+      userId: bigint;
+      phone: string;
+      upiId: string;
+      amount: bigint;
+      documentUrl: string;
+      status: string;
+      timestamp: bigint;
+    }>
+  >([]);
+  const [withdrawalLoading, setWithdrawalLoading] = useState(false);
+
+  const fetchWithdrawalRequests = async () => {
+    setWithdrawalLoading(true);
+    try {
+      const actor = await getActorWithRetry();
+      const reqs = await (actor as any).getWithdrawalRequestsWithPassword(
+        ADMIN_PASSWORD,
+      );
+      setWithdrawalRequests(reqs);
+    } catch (_e) {
+      toast.error("Failed to load withdrawal requests");
+    } finally {
+      setWithdrawalLoading(false);
+    }
+  };
+
+  const handleWithdrawalStatus = async (id: bigint, status: string) => {
+    try {
+      const actor = await getActorWithRetry();
+      await (actor as any).updateWithdrawalStatusWithPassword(
+        ADMIN_PASSWORD,
+        id,
+        status,
+      );
+      toast.success(`Request marked as ${status}`);
+      fetchWithdrawalRequests();
+    } catch (_e) {
+      toast.error("Failed to update status");
+    }
+  };
 
   // Load joining bonus from backend
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional
@@ -1224,6 +1269,23 @@ export default function AdminPage() {
             >
               <Tv className="w-4 h-4" />
               User Channels ({adminUserChannels.length})
+            </TabsTrigger>
+            <TabsTrigger
+              value="withdrawals"
+              className="flex items-center gap-1.5 font-ui data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              onClick={fetchWithdrawalRequests}
+            >
+              <Banknote className="w-4 h-4" />
+              Withdrawals
+              {withdrawalRequests.filter((r) => r.status === "pending").length >
+                0 && (
+                <Badge className="ml-1 h-4 px-1.5 text-xs bg-amber-500 text-black">
+                  {
+                    withdrawalRequests.filter((r) => r.status === "pending")
+                      .length
+                  }
+                </Badge>
+              )}
             </TabsTrigger>
             <TabsTrigger
               value="stats"
@@ -3132,6 +3194,118 @@ export default function AdminPage() {
                   </AlertDescription>
                 </Alert>
               </motion.div>
+            )}
+          </TabsContent>
+
+          {/* ── WITHDRAWALS TAB ── */}
+          <TabsContent value="withdrawals">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-display font-bold text-foreground">
+                Withdrawal Requests
+              </h3>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={fetchWithdrawalRequests}
+                disabled={withdrawalLoading}
+              >
+                <RefreshCw
+                  className={`w-4 h-4 mr-1.5 ${withdrawalLoading ? "animate-spin" : ""}`}
+                />
+                Refresh
+              </Button>
+            </div>
+            {withdrawalLoading ? (
+              <div className="space-y-2">
+                <Skeleton className="h-16 rounded-xl" />
+                <Skeleton className="h-16 rounded-xl" />
+                <Skeleton className="h-16 rounded-xl" />
+              </div>
+            ) : withdrawalRequests.length === 0 ? (
+              <Card>
+                <CardContent className="p-8 text-center text-muted-foreground">
+                  <Banknote className="w-10 h-10 mx-auto mb-3 opacity-30" />
+                  <p className="font-body">No withdrawal requests yet.</p>
+                  <p className="text-xs mt-1">
+                    Click Refresh to load requests.
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-3">
+                {withdrawalRequests.map((req) => (
+                  <Card key={String(req.id)} className="card-premium">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Phone className="w-3.5 h-3.5 text-muted-foreground" />
+                            <span className="text-sm font-ui font-semibold text-foreground">
+                              {req.phone}
+                            </span>
+                            <Badge
+                              className={
+                                req.status === "approved"
+                                  ? "bg-green-500/20 text-green-300 border-green-500/30"
+                                  : req.status === "rejected"
+                                    ? "bg-red-500/20 text-red-300 border-red-500/30"
+                                    : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                              }
+                            >
+                              {req.status}
+                            </Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            UPI:{" "}
+                            <span className="text-foreground">{req.upiId}</span>
+                          </div>
+                          <div className="text-xs text-muted-foreground">
+                            Amount:{" "}
+                            <span className="text-green-300 font-semibold">
+                              ₹{String(req.amount)}
+                            </span>
+                          </div>
+                          {req.documentUrl && (
+                            <a
+                              href={req.documentUrl}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline mt-1"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              View Document
+                            </a>
+                          )}
+                        </div>
+                        {req.status === "pending" && (
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                handleWithdrawalStatus(req.id, "approved")
+                              }
+                              className="bg-green-500/20 text-green-300 border border-green-500/30 hover:bg-green-500/30 h-8 px-3"
+                              variant="ghost"
+                            >
+                              <CheckCircle className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              onClick={() =>
+                                handleWithdrawalStatus(req.id, "rejected")
+                              }
+                              className="bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30 h-8 px-3"
+                              variant="ghost"
+                            >
+                              <XCircle className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
             )}
           </TabsContent>
         </Tabs>
