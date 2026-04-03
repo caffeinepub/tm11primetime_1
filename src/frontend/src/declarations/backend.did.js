@@ -93,9 +93,20 @@ ReferralNode.fill(
     'name' : IDL.Text,
     'children' : IDL.Vec(ReferralNode),
     'phone' : IDL.Text,
+    'referredByCode' : IDL.Text,
     'referredByName' : IDL.Text,
   })
 );
+export const WithdrawalRequest = IDL.Record({
+  'id' : IDL.Nat,
+  'status' : IDL.Text,
+  'documentUrl' : IDL.Text,
+  'userId' : IDL.Nat,
+  'timestamp' : IDL.Int,
+  'upiId' : IDL.Text,
+  'phone' : IDL.Text,
+  'amount' : IDL.Nat,
+});
 export const PaymentSubmissionInput = IDL.Record({
   'utr' : IDL.Text,
   'name' : IDL.Text,
@@ -182,9 +193,15 @@ export const idlService = IDL.Service({
   'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
   'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
   'getChannelVideos' : IDL.Func([IDL.Nat], [IDL.Vec(UserVideo)], ['query']),
+  'getJoiningBonus' : IDL.Func([], [IDL.Nat], ['query']),
   'getMyChannelByPhone' : IDL.Func(
       [IDL.Text],
       [IDL.Opt(UserChannel)],
+      ['query'],
+    ),
+  'getReferralTreeByUserId' : IDL.Func(
+      [IDL.Nat],
+      [IDL.Opt(ReferralNode)],
       ['query'],
     ),
   'getReferralTreeWithPassword' : IDL.Func(
@@ -201,6 +218,11 @@ export const idlService = IDL.Service({
   'getUserWatchTime' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
   'getUserWatchTimeByPhone' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
   'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
+  'getWithdrawalRequestsWithPassword' : IDL.Func(
+      [IDL.Text],
+      [IDL.Vec(WithdrawalRequest)],
+      ['query'],
+    ),
   'initializeAdmin' : IDL.Func([IDL.Text], [], []),
   'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
   'recordWatch' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool], [], []),
@@ -216,9 +238,20 @@ export const idlService = IDL.Service({
     ),
   'rejectPaymentSubmissionWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+  'setJoiningBonusWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
   'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
+  'submitWithdrawalRequest' : IDL.Func(
+      [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+      [IDL.Nat],
+      [],
+    ),
   'updateChannelWithPhone' : IDL.Func(
       [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+      [],
+      [],
+    ),
+  'updateWithdrawalStatusWithPassword' : IDL.Func(
+      [IDL.Text, IDL.Nat, IDL.Text],
       [],
       [],
     ),
@@ -318,9 +351,20 @@ export const idlFactory = ({ IDL }) => {
       'name' : IDL.Text,
       'children' : IDL.Vec(ReferralNode),
       'phone' : IDL.Text,
+      'referredByCode' : IDL.Text,
       'referredByName' : IDL.Text,
     })
   );
+  const WithdrawalRequest = IDL.Record({
+    'id' : IDL.Nat,
+    'status' : IDL.Text,
+    'documentUrl' : IDL.Text,
+    'userId' : IDL.Nat,
+    'timestamp' : IDL.Int,
+    'upiId' : IDL.Text,
+    'phone' : IDL.Text,
+    'amount' : IDL.Nat,
+  });
   const PaymentSubmissionInput = IDL.Record({
     'utr' : IDL.Text,
     'name' : IDL.Text,
@@ -415,9 +459,15 @@ export const idlFactory = ({ IDL }) => {
     'getCallerUserProfile' : IDL.Func([], [IDL.Opt(UserProfile)], ['query']),
     'getCallerUserRole' : IDL.Func([], [UserRole], ['query']),
     'getChannelVideos' : IDL.Func([IDL.Nat], [IDL.Vec(UserVideo)], ['query']),
+    'getJoiningBonus' : IDL.Func([], [IDL.Nat], ['query']),
     'getMyChannelByPhone' : IDL.Func(
         [IDL.Text],
         [IDL.Opt(UserChannel)],
+        ['query'],
+      ),
+    'getReferralTreeByUserId' : IDL.Func(
+        [IDL.Nat],
+        [IDL.Opt(ReferralNode)],
         ['query'],
       ),
     'getReferralTreeWithPassword' : IDL.Func(
@@ -434,6 +484,11 @@ export const idlFactory = ({ IDL }) => {
     'getUserWatchTime' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
     'getUserWatchTimeByPhone' : IDL.Func([IDL.Text], [IDL.Nat], ['query']),
     'getVideosByCategory' : IDL.Func([IDL.Text], [IDL.Vec(Video)], ['query']),
+    'getWithdrawalRequestsWithPassword' : IDL.Func(
+        [IDL.Text],
+        [IDL.Vec(WithdrawalRequest)],
+        ['query'],
+      ),
     'initializeAdmin' : IDL.Func([IDL.Text], [], []),
     'isCallerAdmin' : IDL.Func([], [IDL.Bool], ['query']),
     'recordWatch' : IDL.Func([IDL.Nat, IDL.Nat, IDL.Bool, IDL.Bool], [], []),
@@ -453,9 +508,20 @@ export const idlFactory = ({ IDL }) => {
         [],
       ),
     'saveCallerUserProfile' : IDL.Func([UserProfile], [], []),
+    'setJoiningBonusWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
     'submitPaymentProof' : IDL.Func([PaymentSubmissionInput], [IDL.Nat], []),
+    'submitWithdrawalRequest' : IDL.Func(
+        [IDL.Text, IDL.Text, IDL.Nat, IDL.Text],
+        [IDL.Nat],
+        [],
+      ),
     'updateChannelWithPhone' : IDL.Func(
         [IDL.Text, IDL.Nat, IDL.Text, IDL.Text, IDL.Text, IDL.Text],
+        [],
+        [],
+      ),
+    'updateWithdrawalStatusWithPassword' : IDL.Func(
+        [IDL.Text, IDL.Nat, IDL.Text],
         [],
         [],
       ),
@@ -469,24 +535,6 @@ export const idlFactory = ({ IDL }) => {
         [],
         [],
       ),
-    'getJoiningBonus' : IDL.Func([], [IDL.Nat], ['query']),
-    'setJoiningBonusWithPassword' : IDL.Func([IDL.Text, IDL.Nat], [], []),
-    'submitWithdrawalRequest' : IDL.Func([IDL.Text, IDL.Text, IDL.Nat, IDL.Text], [IDL.Nat], []),
-    'getWithdrawalRequestsWithPassword' : IDL.Func(
-        [IDL.Text],
-        [IDL.Vec(IDL.Record({
-          'id' : IDL.Nat,
-          'userId' : IDL.Nat,
-          'phone' : IDL.Text,
-          'upiId' : IDL.Text,
-          'amount' : IDL.Nat,
-          'documentUrl' : IDL.Text,
-          'status' : IDL.Text,
-          'timestamp' : IDL.Int,
-        }))],
-        ['query'],
-      ),
-    'updateWithdrawalStatusWithPassword' : IDL.Func([IDL.Text, IDL.Nat, IDL.Text], [], []),
   });
 };
 

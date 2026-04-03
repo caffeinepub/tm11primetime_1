@@ -94,6 +94,27 @@
   }
 }
 
+/* ─── Components ────────────────────────────────────────────────────── */
+@layer components {
+  /* Premium card style used across the app */
+  .card-premium {
+    @apply bg-card border border-border rounded-xl;
+    box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.4);
+  }
+
+  /* Shimmer animation for skeleton loading */
+  .animate-shimmer {
+    background: linear-gradient(
+      90deg,
+      oklch(var(--secondary)) 25%,
+      oklch(var(--muted)) 37%,
+      oklch(var(--secondary)) 63%
+    );
+    background-size: 400% 100%;
+    animation: shimmer 1.5s ease-in-out infinite;
+  }
+}
+
 /* ─── Utilities ─────────────────────────────────────────────────────── */
 @layer utilities {
   .text-gradient-gold {
@@ -123,6 +144,10 @@
   .glow-gold {
     box-shadow: 0 0 20px oklch(var(--gold) / 0.25), 0 0 40px
       oklch(var(--gold) / 0.1);
+  }
+
+  .shadow-card {
+    box-shadow: 0 4px 24px -4px rgba(0, 0, 0, 0.4);
   }
 
   .card-hover {

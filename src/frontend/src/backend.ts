@@ -106,6 +106,12 @@ export interface PaymentSubmissionInput {
     phone: string;
     amount: string;
 }
+export interface ChannelLink {
+    id: bigint;
+    url: string;
+    name: string;
+    createdAt: bigint;
+}
 export interface PaymentSubmission {
     id: bigint;
     utr: string;
@@ -150,11 +156,15 @@ export interface UserVideo {
     description: string;
     category: string;
 }
-export interface ChannelLink {
+export interface WithdrawalRequest {
     id: bigint;
-    url: string;
-    name: string;
-    createdAt: bigint;
+    status: string;
+    documentUrl: string;
+    userId: bigint;
+    timestamp: bigint;
+    upiId: string;
+    phone: string;
+    amount: bigint;
 }
 export interface UserProfile {
     userId: bigint;
@@ -168,6 +178,7 @@ export interface ReferralNode {
     name: string;
     children: Array<ReferralNode>;
     phone: string;
+    referredByCode: string;
     referredByName: string;
 }
 export enum PaymentStatus {
@@ -210,13 +221,16 @@ export interface backendInterface {
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getChannelVideos(channelId: bigint): Promise<Array<UserVideo>>;
+    getJoiningBonus(): Promise<bigint>;
     getMyChannelByPhone(phone: string): Promise<UserChannel | null>;
+    getReferralTreeByUserId(userId: bigint): Promise<ReferralNode | null>;
     getReferralTreeWithPassword(password: string, userId: bigint): Promise<ReferralNode>;
     getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getUserWatchTime(phone: string): Promise<bigint>;
     getUserWatchTimeByPhone(phone: string): Promise<bigint>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
+    getWithdrawalRequestsWithPassword(password: string): Promise<Array<WithdrawalRequest>>;
     initializeAdmin(userProvidedToken: string): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
     recordWatch(videoId: bigint, watchedSeconds: bigint, completed: boolean, subscribed: boolean): Promise<void>;
@@ -224,8 +238,11 @@ export interface backendInterface {
     registerUser(name: string, email: string, phone: string, referralCode: string): Promise<bigint>;
     rejectPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setJoiningBonusWithPassword(password: string, amount: bigint): Promise<void>;
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
+    submitWithdrawalRequest(phone: string, upiId: string, amount: bigint, documentUrl: string): Promise<bigint>;
     updateChannelWithPhone(phone: string, channelId: bigint, name: string, description: string, thumbnailUrl: string, bannerUrl: string): Promise<void>;
+    updateWithdrawalStatusWithPassword(password: string, wrId: bigint, newStatus: string): Promise<void>;
     uploadVideoToChannelWithPhone(phone: string, channelId: bigint, title: string, url: string, description: string, thumbnailUrl: string, category: string): Promise<bigint>;
     verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
 }
@@ -573,6 +590,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async getJoiningBonus(): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getJoiningBonus();
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getJoiningBonus();
+            return result;
+        }
+    }
     async getMyChannelByPhone(arg0: string): Promise<UserChannel | null> {
         if (this.processError) {
             try {
@@ -587,32 +618,46 @@ export class Backend implements backendInterface {
             return from_candid_opt_n11(this._uploadFile, this._downloadFile, result);
         }
     }
+    async getReferralTreeByUserId(arg0: bigint): Promise<ReferralNode | null> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getReferralTreeByUserId(arg0);
+                return from_candid_opt_n12(this._uploadFile, this._downloadFile, result);
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getReferralTreeByUserId(arg0);
+            return from_candid_opt_n12(this._uploadFile, this._downloadFile, result);
+        }
+    }
     async getReferralTreeWithPassword(arg0: string, arg1: bigint): Promise<ReferralNode> {
         if (this.processError) {
             try {
                 const result = await this.actor.getReferralTreeWithPassword(arg0, arg1);
-                return from_candid_ReferralNode_n12(this._uploadFile, this._downloadFile, result);
+                return from_candid_ReferralNode_n13(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getReferralTreeWithPassword(arg0, arg1);
-            return from_candid_ReferralNode_n12(this._uploadFile, this._downloadFile, result);
+            return from_candid_ReferralNode_n13(this._uploadFile, this._downloadFile, result);
         }
     }
     async getUserByPhone(arg0: string): Promise<User | null> {
         if (this.processError) {
             try {
                 const result = await this.actor.getUserByPhone(arg0);
-                return from_candid_opt_n15(this._uploadFile, this._downloadFile, result);
+                return from_candid_opt_n16(this._uploadFile, this._downloadFile, result);
             } catch (e) {
                 this.processError(e);
                 throw new Error("unreachable");
             }
         } else {
             const result = await this.actor.getUserByPhone(arg0);
-            return from_candid_opt_n15(this._uploadFile, this._downloadFile, result);
+            return from_candid_opt_n16(this._uploadFile, this._downloadFile, result);
         }
     }
     async getUserProfile(arg0: Principal): Promise<UserProfile | null> {
@@ -668,6 +713,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.getVideosByCategory(arg0);
+            return result;
+        }
+    }
+    async getWithdrawalRequestsWithPassword(arg0: string): Promise<Array<WithdrawalRequest>> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.getWithdrawalRequestsWithPassword(arg0);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.getWithdrawalRequestsWithPassword(arg0);
             return result;
         }
     }
@@ -769,6 +828,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async setJoiningBonusWithPassword(arg0: string, arg1: bigint): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.setJoiningBonusWithPassword(arg0, arg1);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.setJoiningBonusWithPassword(arg0, arg1);
+            return result;
+        }
+    }
     async submitPaymentProof(arg0: PaymentSubmissionInput): Promise<bigint> {
         if (this.processError) {
             try {
@@ -783,6 +856,20 @@ export class Backend implements backendInterface {
             return result;
         }
     }
+    async submitWithdrawalRequest(arg0: string, arg1: string, arg2: bigint, arg3: string): Promise<bigint> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.submitWithdrawalRequest(arg0, arg1, arg2, arg3);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.submitWithdrawalRequest(arg0, arg1, arg2, arg3);
+            return result;
+        }
+    }
     async updateChannelWithPhone(arg0: string, arg1: bigint, arg2: string, arg3: string, arg4: string, arg5: string): Promise<void> {
         if (this.processError) {
             try {
@@ -794,6 +881,20 @@ export class Backend implements backendInterface {
             }
         } else {
             const result = await this.actor.updateChannelWithPhone(arg0, arg1, arg2, arg3, arg4, arg5);
+            return result;
+        }
+    }
+    async updateWithdrawalStatusWithPassword(arg0: string, arg1: bigint, arg2: string): Promise<void> {
+        if (this.processError) {
+            try {
+                const result = await this.actor.updateWithdrawalStatusWithPassword(arg0, arg1, arg2);
+                return result;
+            } catch (e) {
+                this.processError(e);
+                throw new Error("unreachable");
+            }
+        } else {
+            const result = await this.actor.updateWithdrawalStatusWithPassword(arg0, arg1, arg2);
             return result;
         }
     }
@@ -832,8 +933,8 @@ function from_candid_PaymentStatus_n6(_uploadFile: (file: ExternalBlob) => Promi
 function from_candid_PaymentSubmission_n4(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _PaymentSubmission): PaymentSubmission {
     return from_candid_record_n5(_uploadFile, _downloadFile, value);
 }
-function from_candid_ReferralNode_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ReferralNode): ReferralNode {
-    return from_candid_record_n13(_uploadFile, _downloadFile, value);
+function from_candid_ReferralNode_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _ReferralNode): ReferralNode {
+    return from_candid_record_n14(_uploadFile, _downloadFile, value);
 }
 function from_candid_UserRole_n9(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: _UserRole): UserRole {
     return from_candid_variant_n10(_uploadFile, _downloadFile, value);
@@ -841,18 +942,22 @@ function from_candid_UserRole_n9(_uploadFile: (file: ExternalBlob) => Promise<Ui
 function from_candid_opt_n11(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserChannel]): UserChannel | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_opt_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_User]): User | null {
+function from_candid_opt_n12(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_ReferralNode]): ReferralNode | null {
+    return value.length === 0 ? null : from_candid_ReferralNode_n13(_uploadFile, _downloadFile, value[0]);
+}
+function from_candid_opt_n16(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_User]): User | null {
     return value.length === 0 ? null : value[0];
 }
 function from_candid_opt_n8(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: [] | [_UserProfile]): UserProfile | null {
     return value.length === 0 ? null : value[0];
 }
-function from_candid_record_n13(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
+function from_candid_record_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: {
     id: bigint;
     referralCode: string;
     name: string;
     children: Array<_ReferralNode>;
     phone: string;
+    referredByCode: string;
     referredByName: string;
 }): {
     id: bigint;
@@ -860,14 +965,16 @@ function from_candid_record_n13(_uploadFile: (file: ExternalBlob) => Promise<Uin
     name: string;
     children: Array<ReferralNode>;
     phone: string;
+    referredByCode: string;
     referredByName: string;
 } {
     return {
         id: value.id,
         referralCode: value.referralCode,
         name: value.name,
-        children: from_candid_vec_n14(_uploadFile, _downloadFile, value.children),
+        children: from_candid_vec_n15(_uploadFile, _downloadFile, value.children),
         phone: value.phone,
+        referredByCode: value.referredByCode,
         referredByName: value.referredByName
     };
 }
@@ -919,8 +1026,8 @@ function from_candid_variant_n7(_uploadFile: (file: ExternalBlob) => Promise<Uin
 }): PaymentStatus {
     return "pending" in value ? PaymentStatus.pending : "approved" in value ? PaymentStatus.approved : "rejected" in value ? PaymentStatus.rejected : value;
 }
-function from_candid_vec_n14(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_ReferralNode>): Array<ReferralNode> {
-    return value.map((x)=>from_candid_ReferralNode_n12(_uploadFile, _downloadFile, x));
+function from_candid_vec_n15(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_ReferralNode>): Array<ReferralNode> {
+    return value.map((x)=>from_candid_ReferralNode_n13(_uploadFile, _downloadFile, x));
 }
 function from_candid_vec_n3(_uploadFile: (file: ExternalBlob) => Promise<Uint8Array>, _downloadFile: (file: Uint8Array) => Promise<ExternalBlob>, value: Array<_PaymentSubmission>): Array<PaymentSubmission> {
     return value.map((x)=>from_candid_PaymentSubmission_n4(_uploadFile, _downloadFile, x));

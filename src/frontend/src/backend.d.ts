@@ -24,6 +24,12 @@ export interface PaymentSubmissionInput {
     phone: string;
     amount: string;
 }
+export interface ChannelLink {
+    id: bigint;
+    url: string;
+    name: string;
+    createdAt: bigint;
+}
 export interface PaymentSubmission {
     id: bigint;
     utr: string;
@@ -68,11 +74,15 @@ export interface UserVideo {
     description: string;
     category: string;
 }
-export interface ChannelLink {
+export interface WithdrawalRequest {
     id: bigint;
-    url: string;
-    name: string;
-    createdAt: bigint;
+    status: string;
+    documentUrl: string;
+    userId: bigint;
+    timestamp: bigint;
+    upiId: string;
+    phone: string;
+    amount: bigint;
 }
 export interface UserProfile {
     userId: bigint;
@@ -83,10 +93,10 @@ export interface UserProfile {
 export interface ReferralNode {
     id: bigint;
     referralCode: string;
-    referredByCode: string;
     name: string;
     children: Array<ReferralNode>;
     phone: string;
+    referredByCode: string;
     referredByName: string;
 }
 export enum PaymentStatus {
@@ -128,13 +138,16 @@ export interface backendInterface {
     getCallerUserProfile(): Promise<UserProfile | null>;
     getCallerUserRole(): Promise<UserRole>;
     getChannelVideos(channelId: bigint): Promise<Array<UserVideo>>;
+    getJoiningBonus(): Promise<bigint>;
     getMyChannelByPhone(phone: string): Promise<UserChannel | null>;
+    getReferralTreeByUserId(userId: bigint): Promise<ReferralNode | null>;
     getReferralTreeWithPassword(password: string, userId: bigint): Promise<ReferralNode>;
     getUserByPhone(phone: string): Promise<User | null>;
     getUserProfile(user: Principal): Promise<UserProfile | null>;
     getUserWatchTime(phone: string): Promise<bigint>;
     getUserWatchTimeByPhone(phone: string): Promise<bigint>;
     getVideosByCategory(category: string): Promise<Array<Video>>;
+    getWithdrawalRequestsWithPassword(password: string): Promise<Array<WithdrawalRequest>>;
     initializeAdmin(userProvidedToken: string): Promise<void>;
     isCallerAdmin(): Promise<boolean>;
     recordWatch(videoId: bigint, watchedSeconds: bigint, completed: boolean, subscribed: boolean): Promise<void>;
@@ -142,12 +155,11 @@ export interface backendInterface {
     registerUser(name: string, email: string, phone: string, referralCode: string): Promise<bigint>;
     rejectPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
     saveCallerUserProfile(profile: UserProfile): Promise<void>;
+    setJoiningBonusWithPassword(password: string, amount: bigint): Promise<void>;
     submitPaymentProof(input: PaymentSubmissionInput): Promise<bigint>;
+    submitWithdrawalRequest(phone: string, upiId: string, amount: bigint, documentUrl: string): Promise<bigint>;
     updateChannelWithPhone(phone: string, channelId: bigint, name: string, description: string, thumbnailUrl: string, bannerUrl: string): Promise<void>;
+    updateWithdrawalStatusWithPassword(password: string, wrId: bigint, newStatus: string): Promise<void>;
     uploadVideoToChannelWithPhone(phone: string, channelId: bigint, title: string, url: string, description: string, thumbnailUrl: string, category: string): Promise<bigint>;
     verifyPaymentSubmissionWithPassword(password: string, submissionId: bigint): Promise<void>;
-    getJoiningBonus(): Promise<bigint>;
-    setJoiningBonusWithPassword(password: string, amount: bigint): Promise<void>;
-    getReferralTreeByUserId(userId: bigint): Promise<ReferralNode | null>;
-    getUserWatchTimeByPhone(phone: string): Promise<bigint>;
 }

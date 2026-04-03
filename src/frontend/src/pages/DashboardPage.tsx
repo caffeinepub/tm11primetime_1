@@ -118,16 +118,7 @@ function DashboardVideoCard({
   const ocidIndex = index + 1;
 
   const channelUrl = video.channelUrl || null;
-  const thumbnailUrl = (() => {
-    try {
-      const map = JSON.parse(
-        localStorage.getItem("thumbnailMap") ?? "{}",
-      ) as Record<string, string>;
-      return map[video.url] ?? null;
-    } catch {
-      return null;
-    }
-  })();
+  const thumbnailUrl = video.thumbnailUrl || null;
 
   return (
     <motion.div

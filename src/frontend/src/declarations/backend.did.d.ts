@@ -41,6 +41,7 @@ export interface ReferralNode {
   'name' : string,
   'children' : Array<ReferralNode>,
   'phone' : string,
+  'referredByCode' : string,
   'referredByName' : string,
 }
 export interface User {
@@ -97,6 +98,16 @@ export interface Video {
   'description' : string,
   'category' : string,
 }
+export interface WithdrawalRequest {
+  'id' : bigint,
+  'status' : string,
+  'documentUrl' : string,
+  'userId' : bigint,
+  'timestamp' : bigint,
+  'upiId' : string,
+  'phone' : string,
+  'amount' : bigint,
+}
 export interface _SERVICE {
   '_initializeAccessControlWithSecret' : ActorMethod<[string], undefined>,
   'addChannelWithPassword' : ActorMethod<[string, string, string], bigint>,
@@ -147,13 +158,19 @@ export interface _SERVICE {
   'getCallerUserProfile' : ActorMethod<[], [] | [UserProfile]>,
   'getCallerUserRole' : ActorMethod<[], UserRole>,
   'getChannelVideos' : ActorMethod<[bigint], Array<UserVideo>>,
+  'getJoiningBonus' : ActorMethod<[], bigint>,
   'getMyChannelByPhone' : ActorMethod<[string], [] | [UserChannel]>,
+  'getReferralTreeByUserId' : ActorMethod<[bigint], [] | [ReferralNode]>,
   'getReferralTreeWithPassword' : ActorMethod<[string, bigint], ReferralNode>,
   'getUserByPhone' : ActorMethod<[string], [] | [User]>,
   'getUserProfile' : ActorMethod<[Principal], [] | [UserProfile]>,
   'getUserWatchTime' : ActorMethod<[string], bigint>,
   'getUserWatchTimeByPhone' : ActorMethod<[string], bigint>,
   'getVideosByCategory' : ActorMethod<[string], Array<Video>>,
+  'getWithdrawalRequestsWithPassword' : ActorMethod<
+    [string],
+    Array<WithdrawalRequest>
+  >,
   'initializeAdmin' : ActorMethod<[string], undefined>,
   'isCallerAdmin' : ActorMethod<[], boolean>,
   'recordWatch' : ActorMethod<[bigint, bigint, boolean, boolean], undefined>,
@@ -167,9 +184,18 @@ export interface _SERVICE {
     undefined
   >,
   'saveCallerUserProfile' : ActorMethod<[UserProfile], undefined>,
+  'setJoiningBonusWithPassword' : ActorMethod<[string, bigint], undefined>,
   'submitPaymentProof' : ActorMethod<[PaymentSubmissionInput], bigint>,
+  'submitWithdrawalRequest' : ActorMethod<
+    [string, string, bigint, string],
+    bigint
+  >,
   'updateChannelWithPhone' : ActorMethod<
     [string, bigint, string, string, string, string],
+    undefined
+  >,
+  'updateWithdrawalStatusWithPassword' : ActorMethod<
+    [string, bigint, string],
     undefined
   >,
   'uploadVideoToChannelWithPhone' : ActorMethod<
@@ -180,20 +206,6 @@ export interface _SERVICE {
     [string, bigint],
     undefined
   >,
-  'getJoiningBonus' : ActorMethod<[], bigint>,
-  'setJoiningBonusWithPassword' : ActorMethod<[string, bigint], undefined>,
-  'submitWithdrawalRequest' : ActorMethod<[string, string, bigint, string], bigint>,
-  'getWithdrawalRequestsWithPassword' : ActorMethod<[string], Array<{
-    id: bigint,
-    userId: bigint,
-    phone: string,
-    upiId: string,
-    amount: bigint,
-    documentUrl: string,
-    status: string,
-    timestamp: bigint,
-  }>>,
-  'updateWithdrawalStatusWithPassword' : ActorMethod<[string, bigint, string], undefined>,
 }
 export declare const idlService: IDL.ServiceClass;
 export declare const idlInitArgs: IDL.Type[];

@@ -20,7 +20,11 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { getActorWithRetry, normalizePhone } from "../globalActor";
+import {
+  getActorWithRetry,
+  normalizePhone,
+  resetGlobalActor,
+} from "../globalActor";
 import { usePhoneAuth } from "../hooks/usePhoneAuth";
 
 const LEVEL_EARNINGS = [
@@ -73,12 +77,33 @@ const FEATURES = [
   },
 ];
 
+const NETWORK_ERROR_KEYWORDS = [
+  "connect",
+  "fetch",
+  "network",
+  "timeout",
+  "unavailable",
+  "reject",
+  "canister",
+  "ic0",
+];
+
+function classifyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const lower = msg.toLowerCase();
+  const isNetwork = NETWORK_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
+  return isNetwork
+    ? "Could not connect to the server. Please check your connection and try again."
+    : "Something went wrong. Please try again.";
+}
+
 export default function LandingPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
   const [phone, setPhone] = useState("");
   const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState("");
+  const [retryAttempt, setRetryAttempt] = useState(0);
 
   // Auto-login if returning user
   useEffect(() => {
@@ -100,33 +125,67 @@ export default function LandingPage() {
       setStatus("error");
       return;
     }
+
     setStatus("checking");
     setErrorMsg("");
-    try {
-      const actor = await getActorWithRetry();
-      const user = await actor.getUserByPhone(normalized);
-      if (user) {
-        phoneAuth.login(user.phone, user.id, user.name);
-        if (user.isPaid) {
-          navigate({ to: "/dashboard" });
-        } else {
-          navigate({ to: "/register", search: { step: "payment" } });
-        }
-      } else {
-        // New user — go to register
-        navigate({ to: "/register", search: { ref: undefined } });
+    setRetryAttempt(0);
+
+    const MAX_RETRIES = 4;
+    const DELAYS = [0, 1500, 2500, 3500];
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      if (attempt > 0) {
+        resetGlobalActor();
+        await new Promise((r) => setTimeout(r, DELAYS[attempt]));
       }
-    } catch (err) {
-      const msg =
-        err instanceof Error ? err.message : "Connection failed. Please retry.";
-      setErrorMsg(msg);
-      setStatus("error");
+      setRetryAttempt(attempt + 1);
+
+      try {
+        const actor = await getActorWithRetry();
+        const result = await actor.getUserByPhone(normalized);
+        const user = Array.isArray(result)
+          ? (result[0] ?? null)
+          : (result ?? null);
+
+        if (user) {
+          phoneAuth.login(user.phone, user.id, user.name);
+          if (user.isPaid) {
+            navigate({ to: "/dashboard" });
+          } else {
+            navigate({ to: "/register", search: { step: "payment" } });
+          }
+        } else {
+          // New user — pass phone to register page so it auto-fills
+          navigate({ to: "/register", search: { phone: raw } });
+        }
+        return; // success
+      } catch (err) {
+        lastErr = err;
+        // If not the last attempt, loop and retry silently
+        if (attempt < MAX_RETRIES - 1) continue;
+      }
     }
+
+    // All retries exhausted
+    setErrorMsg(classifyError(lastErr));
+    setStatus("error");
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleLogin();
   };
+
+  const handleTryAgain = () => {
+    setStatus("idle");
+    setErrorMsg("");
+    setRetryAttempt(0);
+  };
+
+  const checkingLabel =
+    status === "checking" && retryAttempt > 1
+      ? `Checking… (attempt ${retryAttempt} of 4)`
+      : "Checking your account…";
 
   return (
     <div className="min-h-screen bg-background">
@@ -234,11 +293,21 @@ export default function LandingPage() {
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="flex items-start gap-2 text-destructive text-sm"
+                        className="space-y-1"
                         data-ocid="login.error_state"
                       >
-                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                        <span>{errorMsg}</span>
+                        <div className="flex items-start gap-2 text-destructive text-sm">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                          <span>{errorMsg}</span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleTryAgain}
+                          className="text-xs text-primary underline underline-offset-2 hover:text-primary/80 ml-6"
+                          data-ocid="login.secondary_button"
+                        >
+                          Try Again
+                        </button>
                       </motion.div>
                     )}
 
@@ -251,7 +320,7 @@ export default function LandingPage() {
                       {status === "checking" ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Checking your account…
+                          {checkingLabel}
                         </>
                       ) : (
                         <>

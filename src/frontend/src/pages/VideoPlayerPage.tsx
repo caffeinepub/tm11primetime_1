@@ -133,6 +133,7 @@ export default function VideoPlayerPage() {
     try {
       await recordProgressMutation.mutateAsync({
         userId,
+        phone: phoneAuth.phone,
         videoId: video.id,
         watchedSeconds: BigInt(watchedSeconds),
         subscribed,

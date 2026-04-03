@@ -9,7 +9,6 @@ import {
   Check,
   CheckCircle,
   ChevronLeft,
-  Copy,
   Crown,
   Gift,
   IndianRupee,
@@ -56,7 +55,7 @@ function humanError(err: unknown): string {
   )
     return "This number is already registered.";
   if (lower.includes("not functioning") || lower.includes("actor"))
-    return "Service temporarily unavailable. Retrying…";
+    return "Service temporarily unavailable. Retrying\u2026";
   return msg || "Something went wrong. Please try again.";
 }
 
@@ -74,30 +73,42 @@ function isAlreadyRegisteredError(err: unknown): boolean {
   );
 }
 
+// Unwrap Motoko optional: ?User comes back as [] | [User] in JS
+function unwrapOptionalUser(result: unknown): User | null {
+  if (!result) return null;
+  if (Array.isArray(result)) return (result[0] as User) ?? null;
+  return result as User;
+}
+
 async function findUserByPhone(rawPhone: string): Promise<User | null> {
   const actor = await getActorWithRetry();
   const normalized = normalizePhone(rawPhone.trim());
-  return actor.getUserByPhone(normalized);
+  const result = await actor.getUserByPhone(normalized);
+  return unwrapOptionalUser(result);
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 export default function RegisterPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
-  const search = useSearch({ from: "/register" });
+  const search = useSearch({ from: "/register" }) as {
+    step?: string;
+    ref?: string;
+    phone?: string;
+  };
 
-  const initialStep =
-    (search as { step?: string }).step === "payment" ? "payment" : "form";
-  const initialRef = (search as { ref?: string }).ref ?? "";
+  const initialStep = search.step === "payment" ? "payment" : "form";
+  const initialRef = search.ref ?? "";
+  const initialPhone = search.phone ?? "";
 
   const [form, setForm] = useState({
     name: phoneAuth.userName ?? "",
     email: "",
-    phone: phoneAuth.phone ?? "",
+    phone: initialPhone || phoneAuth.phone || "",
     referredBy: initialRef,
   });
   const [formMode, setFormMode] = useState<FormMode>(
-    phoneAuth.isLoggedIn ? "details" : "phone",
+    phoneAuth.isLoggedIn ? "details" : initialPhone ? "checking" : "phone",
   );
   const [step, setStep] = useState<PageStep>(initialStep);
   const [error, setError] = useState("");
@@ -115,18 +126,19 @@ export default function RegisterPage() {
 
   const phoneAuthRef = useRef(phoneAuth);
   phoneAuthRef.current = phoneAuth;
+  const hasAutoChecked = useRef(false);
 
   // Auto-login if already paid
   // biome-ignore lint/correctness/useExhaustiveDependencies: intentional one-time mount check
   useEffect(() => {
     if (phoneAuth.isLoggedIn && initialStep !== "payment") {
-      // Check if they need to pay
       const checkUser = async () => {
         try {
           const actor = await getGlobalActor();
-          const user = await actor.getUserByPhone(
+          const result = await actor.getUserByPhone(
             normalizePhone(phoneAuth.phone ?? ""),
           );
+          const user = unwrapOptionalUser(result);
           if (user?.isPaid) {
             navigate({ to: "/dashboard" });
           } else {
@@ -147,16 +159,27 @@ export default function RegisterPage() {
     }
   }, []);
 
+  // Auto-check phone when coming from LandingPage with a phone param
+  // biome-ignore lint/correctness/useExhaustiveDependencies: intentional one-time check on mount
+  useEffect(() => {
+    if (initialPhone && !hasAutoChecked.current && !phoneAuth.isLoggedIn) {
+      hasAutoChecked.current = true;
+      handlePhoneCheck(initialPhone);
+    }
+  }, []);
+
   // ─── Phase 1: Check phone ──────────────────────────────────────────────
-  const handlePhoneCheck = async () => {
-    const raw = form.phone.trim();
+  const handlePhoneCheck = async (overridePhone?: string) => {
+    const raw = (overridePhone ?? form.phone).trim();
     if (!raw) {
       setError("Please enter your mobile number.");
+      setFormMode("phone");
       return;
     }
     const normalized = normalizePhone(raw);
     if (normalized.length < 10) {
       setError("Please enter a valid 10-digit mobile number.");
+      setFormMode("phone");
       return;
     }
 
@@ -206,7 +229,8 @@ export default function RegisterPage() {
     try {
       // Belt-and-suspenders: double-check not already registered
       const actor = await getActorWithRetry();
-      const existing = await actor.getUserByPhone(normalized);
+      const existingResult = await actor.getUserByPhone(normalized);
+      const existing = unwrapOptionalUser(existingResult);
       if (existing) {
         phoneAuthRef.current.login(existing.phone, existing.id, existing.name);
         if (existing.isPaid) {
@@ -240,21 +264,22 @@ export default function RegisterPage() {
         // Try to recover by looking up the user
         try {
           const actor2 = await getActorWithRetry();
-          const existing = await actor2.getUserByPhone(normalized);
-          if (existing) {
+          const existingResult2 = await actor2.getUserByPhone(normalized);
+          const existing2 = unwrapOptionalUser(existingResult2);
+          if (existing2) {
             phoneAuthRef.current.login(
-              existing.phone,
-              existing.id,
-              existing.name,
+              existing2.phone,
+              existing2.id,
+              existing2.name,
             );
-            if (existing.isPaid) {
+            if (existing2.isPaid) {
               navigate({ to: "/dashboard" });
               return;
             }
             setUtrForm((p) => ({
               ...p,
-              userName: existing.name || form.name,
-              phone: existing.phone || normalized,
+              userName: existing2.name || form.name,
+              phone: existing2.phone || normalized,
             }));
             setStep("payment");
             return;
@@ -287,7 +312,6 @@ export default function RegisterPage() {
     setUtrError("");
     setIsSubmittingPayment(true);
     try {
-      // Use global actor directly — bypasses useActor/useInternetIdentity
       const actor = await getActorWithRetry();
       const submissionPhone = normalizePhone(utrForm.phone) || utrForm.phone;
       await actor.submitPaymentProof({
@@ -306,12 +330,87 @@ export default function RegisterPage() {
     }
   };
 
-  const copyUpi = () => {
-    navigator.clipboard.writeText(UPI_ID);
-    setCopied(true);
-    toast.success("UPI ID copied!");
-    setTimeout(() => setCopied(false), 2000);
+  const copyUpiToClipboard = (text: string): void => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).catch(() => {
+        const el = document.createElement("textarea");
+        el.value = text;
+        el.style.position = "fixed";
+        el.style.opacity = "0";
+        document.body.appendChild(el);
+        el.focus();
+        el.select();
+        document.execCommand("copy");
+        document.body.removeChild(el);
+      });
+    } else {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+    }
   };
+
+  const copyUpi = () => {
+    const text = UPI_ID;
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => {
+          setCopied(true);
+          toast.success("UPI ID copied!");
+          setTimeout(() => setCopied(false), 2000);
+        })
+        .catch(() => {
+          const el = document.createElement("textarea");
+          el.value = text;
+          el.style.position = "fixed";
+          el.style.opacity = "0";
+          document.body.appendChild(el);
+          el.focus();
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+          setCopied(true);
+          toast.success("UPI ID copied!");
+          setTimeout(() => setCopied(false), 2000);
+        });
+    } else {
+      const el = document.createElement("textarea");
+      el.value = text;
+      el.style.position = "fixed";
+      el.style.opacity = "0";
+      document.body.appendChild(el);
+      el.focus();
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      toast.success("UPI ID copied!");
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  const openUpiApp = (appName: string, scheme: string) => {
+    copyUpiToClipboard(UPI_ID);
+    toast.success(
+      `UPI ID copied! Open ${appName} and paste in any payment field.`,
+      { duration: 4000 },
+    );
+    window.location.href = scheme;
+  };
+
+  const upiApps = [
+    { name: "Google Pay", scheme: "gpay://" },
+    { name: "PhonePe", scheme: "phonepe://" },
+    { name: "Paytm", scheme: "paytmmp://" },
+    { name: "BHIM UPI", scheme: "upi://" },
+  ];
 
   // ─── Render: Form Step ────────────────────────────────────────────────
   if (step === "form") {
@@ -400,7 +499,7 @@ export default function RegisterPage() {
                     )}
 
                     <Button
-                      onClick={handlePhoneCheck}
+                      onClick={() => handlePhoneCheck()}
                       disabled={formMode === "checking"}
                       className="w-full bg-primary text-primary-foreground font-ui font-semibold"
                       data-ocid="register.phone.submit_button"
@@ -408,7 +507,7 @@ export default function RegisterPage() {
                       {formMode === "checking" ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Checking your account…
+                          Checking your account\u2026
                         </>
                       ) : (
                         <>
@@ -522,7 +621,7 @@ export default function RegisterPage() {
                       />
                       {initialRef && (
                         <p className="text-xs text-muted-foreground">
-                          🔒 Referral code locked
+                          \uD83D\uDD12 Referral code locked
                         </p>
                       )}
                     </div>
@@ -621,16 +720,19 @@ export default function RegisterPage() {
                     {UPI_ID}
                   </span>
                   <Button
-                    size="icon"
-                    variant="ghost"
+                    size="sm"
+                    variant="outline"
                     onClick={copyUpi}
-                    className="flex-shrink-0 w-8 h-8"
+                    className="flex-shrink-0 text-xs px-3 border-primary/40 text-primary hover:bg-primary/10"
                     data-ocid="payment.copy_upi.button"
                   >
                     {copied ? (
-                      <Check className="w-4 h-4 text-green-400" />
+                      <>
+                        <Check className="w-3 h-3 mr-1 text-green-400" />
+                        Copied!
+                      </>
                     ) : (
-                      <Copy className="w-4 h-4" />
+                      "Copy"
                     )}
                   </Button>
                 </div>
@@ -638,35 +740,22 @@ export default function RegisterPage() {
 
               {/* UPI Apps */}
               <div className="grid grid-cols-2 gap-2">
-                {[
-                  {
-                    name: "Google Pay",
-                    scheme: `gpay://upi/pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
-                  },
-                  {
-                    name: "PhonePe",
-                    scheme: `phonepe://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
-                  },
-                  {
-                    name: "Paytm",
-                    scheme: `paytmmp://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
-                  },
-                  {
-                    name: "BHIM UPI",
-                    scheme: `upi://pay?pa=${UPI_ID}&am=${PAYMENT_AMOUNT}&cu=INR`,
-                  },
-                ].map((app) => (
-                  <a
+                {upiApps.map((app) => (
+                  <button
                     key={app.name}
-                    href={app.scheme}
-                    className="flex items-center justify-center gap-1.5 bg-secondary border border-border rounded-lg py-2 px-3 text-sm font-ui hover:border-primary/40 transition-colors"
+                    type="button"
+                    onClick={() => openUpiApp(app.name, app.scheme)}
+                    className="flex items-center justify-center gap-1.5 bg-secondary border border-border rounded-lg py-2 px-3 text-sm font-ui hover:border-primary/40 transition-colors w-full"
                     data-ocid="payment.upi_app.button"
                   >
                     <Smartphone className="w-3.5 h-3.5 text-primary" />
                     {app.name}
-                  </a>
+                  </button>
                 ))}
               </div>
+              <p className="text-xs text-muted-foreground text-center">
+                Tap an app → UPI ID auto-copied → paste in payment field
+              </p>
 
               {/* Submit UTR */}
               {!showUtrForm ? (

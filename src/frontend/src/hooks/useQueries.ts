@@ -449,17 +449,31 @@ export function useRecordWatchProgressMutation() {
   return useMutation({
     mutationFn: async ({
       userId: _userId,
+      phone,
       videoId,
       watchedSeconds,
       subscribed,
     }: {
       userId: bigint;
+      phone?: string | null;
       videoId: bigint;
       watchedSeconds: bigint;
       subscribed: boolean;
     }) => {
       if (!actor) throw new Error("Not connected");
-      await actor.recordWatch(videoId, watchedSeconds, false, subscribed);
+      if (phone) {
+        // Phone-based users: use phone-authenticated endpoint
+        await actor.recordWatchByPhone(
+          phone,
+          videoId,
+          watchedSeconds,
+          false,
+          subscribed,
+        );
+      } else {
+        // Fallback for principal-based users
+        await actor.recordWatch(videoId, watchedSeconds, false, subscribed);
+      }
     },
     onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({

@@ -49,9 +49,10 @@ const registerRoute = createRoute({
   path: "/register",
   validateSearch: (
     search: Record<string, unknown>,
-  ): { step?: string; ref?: string } => ({
+  ): { step?: string; ref?: string; phone?: string } => ({
     step: (search.step as string | undefined) ?? undefined,
     ref: (search.ref as string | undefined) ?? undefined,
+    phone: (search.phone as string | undefined) ?? undefined,
   }),
   component: RegisterPage,
 });
