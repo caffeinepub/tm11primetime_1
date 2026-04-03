@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import type { User } from "../backend.d";
 import {
   getActorWithRetry,
   normalizePhone,
@@ -77,33 +78,42 @@ const FEATURES = [
   },
 ];
 
-const NETWORK_ERROR_KEYWORDS = [
-  "connect",
-  "fetch",
-  "network",
-  "timeout",
-  "unavailable",
-  "reject",
-  "canister",
-  "ic0",
-];
+// Try phone lookup with multiple formats
+async function lookupUserByPhone(rawPhone: string): Promise<User | null> {
+  const digits = rawPhone.replace(/\D/g, "");
+  let normalized = digits;
+  if (digits.length === 12 && digits.startsWith("91"))
+    normalized = digits.slice(2);
+  if (digits.length === 11 && digits.startsWith("0"))
+    normalized = digits.slice(1);
 
-function classifyError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err);
-  const lower = msg.toLowerCase();
-  const isNetwork = NETWORK_ERROR_KEYWORDS.some((kw) => lower.includes(kw));
-  return isNetwork
-    ? "Could not connect to the server. Please check your connection and try again."
-    : "Something went wrong. Please try again.";
+  const formats = [normalized, `+91${normalized}`, `91${normalized}`];
+
+  const actor = await getActorWithRetry();
+
+  for (const fmt of formats) {
+    try {
+      const result = await actor.getUserByPhone(fmt);
+      const user = Array.isArray(result)
+        ? (result[0] ?? null)
+        : (result ?? null);
+      if (user) return user as User;
+    } catch {
+      // try next format
+    }
+  }
+  return null;
 }
 
 export default function LandingPage() {
   const navigate = useNavigate();
   const phoneAuth = usePhoneAuth();
   const [phone, setPhone] = useState("");
-  const [status, setStatus] = useState<"idle" | "checking" | "error">("idle");
+  const [status, setStatus] = useState<
+    "idle" | "connecting" | "checking" | "error"
+  >("idle");
   const [errorMsg, setErrorMsg] = useState("");
-  const [retryAttempt, setRetryAttempt] = useState(0);
+  const [attempt, setAttempt] = useState(0);
 
   // Auto-login if returning user
   useEffect(() => {
@@ -119,56 +129,69 @@ export default function LandingPage() {
       setStatus("error");
       return;
     }
+    const digits = raw.replace(/\D/g, "");
     const normalized = normalizePhone(raw);
-    if (normalized.length !== 10) {
+    if (normalized.length !== 10 && digits.length < 10) {
       setErrorMsg("Please enter a valid 10-digit mobile number.");
       setStatus("error");
       return;
     }
 
-    setStatus("checking");
+    setStatus("connecting");
     setErrorMsg("");
-    setRetryAttempt(0);
+    setAttempt(0);
 
-    const MAX_RETRIES = 4;
-    const DELAYS = [0, 1500, 2500, 3500];
-    let lastErr: unknown;
+    const MAX_ATTEMPTS = 6;
+    const DELAYS = [0, 1000, 2000, 3000, 4000, 5000];
+    let lastErr: unknown = null;
 
-    for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      if (attempt > 0) {
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      if (i > 0) {
         resetGlobalActor();
-        await new Promise((r) => setTimeout(r, DELAYS[attempt]));
+        await new Promise((r) => setTimeout(r, DELAYS[i]));
       }
-      setRetryAttempt(attempt + 1);
+      setAttempt(i + 1);
+      if (i >= 1) setStatus("checking");
 
       try {
-        const actor = await getActorWithRetry();
-        const result = await actor.getUserByPhone(normalized);
-        const user = Array.isArray(result)
-          ? (result[0] ?? null)
-          : (result ?? null);
+        const user = await lookupUserByPhone(raw);
 
         if (user) {
+          // Existing user — login directly
           phoneAuth.login(user.phone, user.id, user.name);
           if (user.isPaid) {
             navigate({ to: "/dashboard" });
           } else {
             navigate({ to: "/register", search: { step: "payment" } });
           }
-        } else {
-          // New user — pass phone to register page so it auto-fills
-          navigate({ to: "/register", search: { phone: raw } });
+          return;
         }
-        return; // success
+        // New user — go to registration
+        navigate({ to: "/register", search: { phone: raw } });
+        return;
       } catch (err) {
         lastErr = err;
-        // If not the last attempt, loop and retry silently
-        if (attempt < MAX_RETRIES - 1) continue;
+        if (i < MAX_ATTEMPTS - 1) continue;
       }
     }
 
-    // All retries exhausted
-    setErrorMsg(classifyError(lastErr));
+    // All attempts exhausted
+    const msg =
+      lastErr instanceof Error
+        ? lastErr.message.toLowerCase()
+        : String(lastErr).toLowerCase();
+    if (
+      msg.includes("connect") ||
+      msg.includes("fetch") ||
+      msg.includes("network") ||
+      msg.includes("canister")
+    ) {
+      setErrorMsg(
+        "Could not connect to server. Please check your connection and try again.",
+      );
+    } else {
+      setErrorMsg("Something went wrong. Please try again.");
+    }
     setStatus("error");
   };
 
@@ -176,22 +199,19 @@ export default function LandingPage() {
     if (e.key === "Enter") handleLogin();
   };
 
-  const handleTryAgain = () => {
-    setStatus("idle");
-    setErrorMsg("");
-    setRetryAttempt(0);
-  };
+  const isLoading = status === "connecting" || status === "checking";
 
-  const checkingLabel =
-    status === "checking" && retryAttempt > 1
-      ? `Checking… (attempt ${retryAttempt} of 4)`
-      : "Checking your account…";
+  const loadingLabel =
+    status === "connecting"
+      ? "Connecting to server…"
+      : attempt > 1
+        ? `Checking account… (${attempt}/6)`
+        : "Checking your account…";
 
   return (
     <div className="min-h-screen bg-background">
       {/* Hero */}
       <section className="relative overflow-hidden">
-        {/* Background gradient */}
         <div className="absolute inset-0 bg-gradient-to-br from-card via-background to-background" />
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,oklch(0.82_0.16_85/0.08)_0%,transparent_60%)]" />
 
@@ -281,7 +301,7 @@ export default function LandingPage() {
                             setErrorMsg("");
                           }}
                           onKeyDown={handleKeyDown}
-                          disabled={status === "checking"}
+                          disabled={isLoading}
                           className="pl-10 bg-secondary border-border"
                           data-ocid="login.input"
                           autoComplete="tel"
@@ -293,34 +313,24 @@ export default function LandingPage() {
                       <motion.div
                         initial={{ opacity: 0, height: 0 }}
                         animate={{ opacity: 1, height: "auto" }}
-                        className="space-y-1"
+                        className="flex items-start gap-2 text-destructive text-sm"
                         data-ocid="login.error_state"
                       >
-                        <div className="flex items-start gap-2 text-destructive text-sm">
-                          <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                          <span>{errorMsg}</span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={handleTryAgain}
-                          className="text-xs text-primary underline underline-offset-2 hover:text-primary/80 ml-6"
-                          data-ocid="login.secondary_button"
-                        >
-                          Try Again
-                        </button>
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <span>{errorMsg}</span>
                       </motion.div>
                     )}
 
                     <Button
                       onClick={handleLogin}
-                      disabled={status === "checking"}
+                      disabled={isLoading}
                       className="w-full bg-primary text-primary-foreground hover:bg-primary/90 font-ui font-semibold"
                       data-ocid="login.primary_button"
                     >
-                      {status === "checking" ? (
+                      {isLoading ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          {checkingLabel}
+                          {loadingLabel}
                         </>
                       ) : (
                         <>
