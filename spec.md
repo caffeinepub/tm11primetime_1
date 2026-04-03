@@ -1,30 +1,20 @@
 # Tm11primeTime
 
 ## Current State
-Full-stack ICP app with Motoko backend (stable storage, all user/payment/video/channel data persisted) and React frontend. Backend has all required functions: phone-based auth, referral matrix, payments, videos, channels, withdrawals, watch time.
+Backend Motoko code is intact and complete with stable storage, all functions (getUserByPhone, registerUser, payments, referrals, videos, channels, withdrawals, admin). Frontend code is complete. However the deployed canister (m2w3u-lyaaa-aaaaj-a3abq-cai) has no Wasm module installed, causing IC0537 rejection errors on all backend calls and making login impossible.
 
 ## Requested Changes (Diff)
 
 ### Add
-- Nothing new; this is a rebuild/redeploy of the existing full feature set
+- Nothing new to add
 
 ### Modify
-- Ensure all existing features are properly wired and working
+- Redeploy backend Wasm to canister so all functions are available
 
 ### Remove
-- Nothing
+- Nothing to remove
 
 ## Implementation Plan
-
-1. Rebuild frontend with all existing pages: LandingPage, RegisterPage, DashboardPage, WalletPage, VideosPage, VideoPlayerPage, ChannelsPage, AdminPage, MyChannelTab, Layout
-2. Ensure login uses single shared anonymous backend actor created before app renders
-3. Phone normalization: strip +91/91 prefix, try all formats
-4. Auto-login if phone stored in localStorage
-5. Matrix tree: 3 fixed slots per level, shows name, phone, referrer name, referredBy referral ID, auto-refreshes every 20s
-6. Payment flow: UPI QR, UTR entry, amount locked at Rs.118
-7. Video library: public access, channel links, thumbnails from backend
-8. Admin panel: password aakbn@1014, all tabs (Users, Payments, Videos, Channels, Matrix, User Channels, Withdrawals)
-9. Auto-approval toggle in admin payments tab
-10. Wallet page: withdrawal button when balance >= 500, document upload
-11. Watch time tracked in backend, displayed in dashboard and admin
-12. Joining bonus editable from admin (default Rs.150)
+1. Regenerate Motoko backend (triggers fresh Wasm compilation and canister install)
+2. Deploy frontend unchanged
+3. This restores getUserByPhone, registerUser and all other functions to the canister
