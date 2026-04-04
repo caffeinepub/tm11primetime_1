@@ -330,86 +330,92 @@ export default function RegisterPage() {
     }
   };
 
-  const copyUpiToClipboard = (text: string): void => {
+  // ─── Copy UPI ID to clipboard (returns a Promise so we can await it) ──
+  const copyUpiToClipboard = async (text: string): Promise<void> => {
     if (navigator.clipboard?.writeText) {
-      navigator.clipboard.writeText(text).catch(() => {
-        const el = document.createElement("textarea");
-        el.value = text;
-        el.style.position = "fixed";
-        el.style.opacity = "0";
-        document.body.appendChild(el);
-        el.focus();
-        el.select();
-        document.execCommand("copy");
-        document.body.removeChild(el);
-      });
-    } else {
-      const el = document.createElement("textarea");
-      el.value = text;
-      el.style.position = "fixed";
-      el.style.opacity = "0";
-      document.body.appendChild(el);
-      el.focus();
-      el.select();
+      try {
+        await navigator.clipboard.writeText(text);
+        return;
+      } catch {
+        // fall through to execCommand
+      }
+    }
+    // Fallback for older browsers / restricted contexts
+    const el = document.createElement("textarea");
+    el.value = text;
+    el.style.position = "fixed";
+    el.style.opacity = "0";
+    document.body.appendChild(el);
+    el.focus();
+    el.select();
+    try {
       document.execCommand("copy");
+    } finally {
       document.body.removeChild(el);
     }
   };
 
-  const copyUpi = () => {
-    const text = UPI_ID;
-    if (navigator.clipboard?.writeText) {
-      navigator.clipboard
-        .writeText(text)
-        .then(() => {
-          setCopied(true);
-          toast.success("UPI ID copied!");
-          setTimeout(() => setCopied(false), 2000);
-        })
-        .catch(() => {
-          const el = document.createElement("textarea");
-          el.value = text;
-          el.style.position = "fixed";
-          el.style.opacity = "0";
-          document.body.appendChild(el);
-          el.focus();
-          el.select();
-          document.execCommand("copy");
-          document.body.removeChild(el);
-          setCopied(true);
-          toast.success("UPI ID copied!");
-          setTimeout(() => setCopied(false), 2000);
-        });
-    } else {
-      const el = document.createElement("textarea");
-      el.value = text;
-      el.style.position = "fixed";
-      el.style.opacity = "0";
-      document.body.appendChild(el);
-      el.focus();
-      el.select();
-      document.execCommand("copy");
-      document.body.removeChild(el);
+  const copyUpi = async () => {
+    try {
+      await copyUpiToClipboard(UPI_ID);
       setCopied(true);
       toast.success("UPI ID copied!");
       setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Could not copy. Please copy the UPI ID manually.");
     }
   };
 
-  const openUpiApp = (appName: string, url: string) => {
-    copyUpiToClipboard(UPI_ID);
+  // ─── Open UPI app: copy first, then open app ──────────────────────────
+  // On mobile, try the deep-link scheme first; fall back to web URL.
+  const openUpiApp = async (
+    appName: string,
+    deepLink: string,
+    webUrl: string,
+  ) => {
+    // Copy UPI ID to clipboard first, then open the app
+    try {
+      await copyUpiToClipboard(UPI_ID);
+    } catch {
+      // ignore copy failure — still open the app
+    }
     toast.success(
-      `UPI ID copied! Open ${appName} and paste in any payment field.`,
+      `UPI ID copied! Paste it in ${appName} to complete payment.`,
       { duration: 4000 },
     );
-    window.open(url, "_blank");
+    // Try deep link (opens installed app directly on mobile)
+    // If after a short time the page is still visible, fall back to web URL
+    const start = Date.now();
+    window.location.href = deepLink;
+    setTimeout(() => {
+      // If less than 2 seconds have passed the deep link probably didn't work
+      if (Date.now() - start < 2000) {
+        window.open(webUrl, "_blank");
+      }
+    }, 1500);
   };
 
   const upiApps = [
-    { name: "Google Pay", scheme: "https://pay.google.com/" },
-    { name: "PhonePe", scheme: "https://phon.pe/" },
-    { name: "Paytm", scheme: "https://paytm.com/" },
-    { name: "BHIM UPI", scheme: "https://www.bhimupi.org.in/" },
+    {
+      name: "PhonePe",
+      deepLink: "phonepe://",
+      webUrl: "https://phon.pe/",
+    },
+    {
+      name: "Google Pay",
+      deepLink: "tez://upi/",
+      webUrl: "https://pay.google.com/",
+    },
+    {
+      name: "Paytm",
+      deepLink: "paytmmp://",
+      webUrl: "https://paytm.com/",
+    },
+    {
+      name: "BHIM UPI",
+      deepLink: "bhim://",
+      webUrl: "https://www.bhimupi.org.in/",
+    },
   ];
 
   // ─── Render: Form Step ────────────────────────────────────────────────
@@ -744,7 +750,9 @@ export default function RegisterPage() {
                   <button
                     key={app.name}
                     type="button"
-                    onClick={() => openUpiApp(app.name, app.scheme)}
+                    onClick={() =>
+                      openUpiApp(app.name, app.deepLink, app.webUrl)
+                    }
                     className="flex items-center justify-center gap-1.5 bg-secondary border border-border rounded-lg py-2 px-3 text-sm font-ui hover:border-primary/40 transition-colors w-full"
                     data-ocid="payment.upi_app.button"
                   >
