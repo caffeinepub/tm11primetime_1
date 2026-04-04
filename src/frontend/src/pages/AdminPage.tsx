@@ -1389,7 +1389,7 @@ export default function AdminPage() {
                                 {user.email || "—"}
                               </TableCell>
                               <TableCell className="py-3 text-sm font-display font-bold text-green-400">
-                                ₹{(Number(user.walletBalance) / 100).toFixed(2)}
+                                ₹{Number(user.walletBalance).toFixed(2)}
                               </TableCell>
                               <TableCell className="py-3">
                                 <span className="font-ui text-xs text-blue-300">

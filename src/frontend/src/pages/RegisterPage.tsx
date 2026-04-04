@@ -396,20 +396,20 @@ export default function RegisterPage() {
     }
   };
 
-  const openUpiApp = (appName: string, scheme: string) => {
+  const openUpiApp = (appName: string, url: string) => {
     copyUpiToClipboard(UPI_ID);
     toast.success(
       `UPI ID copied! Open ${appName} and paste in any payment field.`,
       { duration: 4000 },
     );
-    window.location.href = scheme;
+    window.open(url, "_blank");
   };
 
   const upiApps = [
-    { name: "Google Pay", scheme: "gpay://" },
-    { name: "PhonePe", scheme: "phonepe://" },
-    { name: "Paytm", scheme: "paytmmp://" },
-    { name: "BHIM UPI", scheme: "upi://" },
+    { name: "Google Pay", scheme: "https://pay.google.com/" },
+    { name: "PhonePe", scheme: "https://phon.pe/" },
+    { name: "Paytm", scheme: "https://paytm.com/" },
+    { name: "BHIM UPI", scheme: "https://www.bhimupi.org.in/" },
   ];
 
   // ─── Render: Form Step ────────────────────────────────────────────────

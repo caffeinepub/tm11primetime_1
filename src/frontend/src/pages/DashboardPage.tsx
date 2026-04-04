@@ -603,7 +603,7 @@ function UserSummaryCard({
   walletBalance,
   joinedAt,
 }: UserSummaryProps) {
-  const walletRs = Number(walletBalance) / 100;
+  const walletRs = Number(walletBalance); // Backend stores rupees directly, not paise
   const joinedDate = joinedAt
     ? new Date(Number(joinedAt) / 1_000_000).toLocaleDateString("en-IN", {
         day: "numeric",
@@ -751,7 +751,7 @@ export default function DashboardPage() {
   const isLoading = userLoading;
 
   const walletBalance = userProfile?.walletBalance ?? BigInt(0);
-  const walletRs = Number(walletBalance) / 100;
+  const walletRs = Number(walletBalance); // Backend stores rupees directly, not paise
 
   const referralCount = referralTree?.children?.length ?? 0;
 
